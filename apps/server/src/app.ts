@@ -5,12 +5,13 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogging } from "./middleware/requestLogging.js";
 import { roomsRouter } from "./routes/rooms.js";
 import { uploadsDirectory, uploadsRouter } from "./routes/uploads.js";
+import { isOriginAllowed } from "./services/cors.js";
 import { logger } from "./services/logger.js";
 
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: process.env.WEB_ORIGIN ?? "http://localhost:3000" }));
+  app.use(cors({ origin: (origin, callback) => callback(null, isOriginAllowed(origin)) }));
   app.use(express.json({ limit: "1mb" }));
   app.use("/uploads", express.static(uploadsDirectory));
   app.use(requestLogging);

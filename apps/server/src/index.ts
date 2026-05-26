@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { createApp } from "./app.js";
+import { getAllowedOrigins } from "./services/cors.js";
 import { logger } from "./services/logger.js";
 import { registerSocketHandlers } from "./socket.js";
 
@@ -10,7 +11,7 @@ const app = createApp();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.WEB_ORIGIN ?? "http://localhost:3000",
+    origin: getAllowedOrigins(),
   },
 });
 
