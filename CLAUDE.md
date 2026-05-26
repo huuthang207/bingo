@@ -29,6 +29,7 @@ npm run cleanup:uploads  # Dry-run cleanup for old uploaded image files
 npm run cleanup:rooms    # Dry-run cleanup for old ended rooms
 npm run prisma:generate  # Generate Prisma client for apps/server
 npm run prisma:migrate   # Run prisma migrate dev for apps/server
+npm --workspace apps/server run prisma:deploy  # Run prisma migrate deploy for production DBs
 ```
 
 Workspace-specific commands:
@@ -46,6 +47,7 @@ npm --workspace apps/server run cleanup:uploads
 npm --workspace apps/server run cleanup:rooms
 npm --workspace apps/server run prisma:generate
 npm --workspace apps/server run prisma:migrate
+npm --workspace apps/server run prisma:deploy
 ```
 
 Server tests use Node's built-in test runner through `tsx`. Run a single test file with:

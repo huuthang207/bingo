@@ -131,6 +131,7 @@ Production hardening: Not started
 - 2026-05-27: `npm test` pass 10/10, `npm run typecheck` pass, `npm run build` pass, `npm run lint` pass sạch warning, `npm run cleanup:uploads` dry-run pass.
 - 2026-05-27: Cập nhật web lint script sang `eslint .`, thêm `apps/web/eslint.config.mjs` cho Next.js 15, tắt rule `@next/next/no-img-element` vì item ảnh dùng URL upload/URL host nhập động, và sửa `postcss.config.js` để tránh anonymous default export.
 - 2026-05-27: `npm run cleanup:rooms` và `docker build -t bingo-app .` đã được chạy thành công sau khi bật PostgreSQL local và Docker daemon.
+- 2026-05-27: Thêm script `prisma:deploy` cho production database migration trên Railway/Vercel workflow.
 
 ## Việc tiếp theo đề xuất
 
