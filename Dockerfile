@@ -30,4 +30,4 @@ COPY --from=build /app/packages/shared/package.json ./packages/shared/package.js
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 
 EXPOSE 4000
-CMD ["npm", "--workspace", "apps/server", "run", "start"]
+CMD ["sh", "-c", "npm --workspace apps/server run prisma:deploy && npm --workspace apps/server run start"]
