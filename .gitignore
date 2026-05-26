@@ -9,4 +9,5 @@ coverage
 Thumbs.db
 apps/server/uploads
 *.log
+*.tsbuildinfo
 .claude/
