@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id              String       @id @default(uuid())
+  roomCode        String       @unique @map("room_code")
+  hostTokenHash   String       @map("host_token_hash")
+  title           String
+  status          String       @default("waiting")
+  boardSize       Int          @default(5) @map("board_size")
+  hasFreeCell     Boolean      @default(true) @map("has_free_cell")
+  winHorizontal   Boolean      @default(true) @map("win_horizontal")
+  winVertical     Boolean      @default(true) @map("win_vertical")
+  winDiagonal     Boolean      @default(true) @map("win_diagonal")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  endedAt         DateTime?    @map("ended_at")
+  items           RoomItem[]
+  players         Player[]
+  calledItems     CalledItem[]
+  bingoClaims     BingoClaim[]
+
+  @@map("rooms")
+}
+
+model RoomItem {
+  id          String       @id @default(uuid())
+  roomId      String       @map("room_id")
+  type        String
+  value       String
+  label       String?
+  metadata    Json?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  room        Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  calledItems CalledItem[]
+
+  @@index([roomId])
+  @@map("room_items")
+}
+
+model Player {
+  id              String       @id @default(uuid())
+  roomId          String       @map("room_id")
+  name            String
+  playerTokenHash String       @map("player_token_hash")
+  boardData       Json         @map("board_data")
+  markedCells     Json         @default("[]") @map("marked_cells")
+  isWinner        Boolean      @default(false) @map("is_winner")
+  joinedAt        DateTime     @default(now()) @map("joined_at")
+  lastSeenAt      DateTime     @default(now()) @map("last_seen_at")
+  room            Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  bingoClaims     BingoClaim[]
+
+  @@index([roomId])
+  @@map("players")
+}
+
+model CalledItem {
+  id          String   @id @default(uuid())
+  roomId      String   @map("room_id")
+  roomItemId  String   @map("room_item_id")
+  calledOrder Int      @map("called_order")
+  calledAt    DateTime @default(now()) @map("called_at")
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomItem    RoomItem @relation(fields: [roomItemId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, roomItemId])
+  @@unique([roomId, calledOrder])
+  @@index([roomId])
+  @@map("called_items")
+}
+
+model BingoClaim {
+  id             String    @id @default(uuid())
+  roomId         String    @map("room_id")
+  playerId       String    @map("player_id")
+  status         String
+  winningPattern Json?     @map("winning_pattern")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  reviewedAt     DateTime? @map("reviewed_at")
+  room           Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  player         Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([playerId])
+  @@map("bingo_claims")
+}

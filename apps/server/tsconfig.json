@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "../../",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "isolatedModules": false,
+    "types": ["node"],
+    "paths": {
+      "@bingo/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

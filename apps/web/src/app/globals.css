@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+@keyframes called-item-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.92) rotate(-1deg);
+  }
+
+  55% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.04) rotate(1deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes called-item-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0);
+  }
+
+  45% {
+    box-shadow: 0 0 0 10px rgba(34, 211, 238, 0.28);
+  }
+}
+
+.called-item-enter {
+  animation: called-item-pop 520ms cubic-bezier(0.2, 0.9, 0.2, 1), called-item-glow 900ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .called-item-enter {
+    animation: none;
+  }
+}
