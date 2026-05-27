@@ -63,18 +63,6 @@ export type HostState = {
   claims: BingoClaim[];
 };
 
-export type DisplayState = {
-  roomCode: string;
-  title: string;
-  status: string;
-  calledItems: CalledItem[];
-  playerCount: number;
-  winners: Array<{
-    id: string;
-    name: string;
-  }>;
-};
-
 export type RoomStateEvent = {
   roomCode: string;
   status: string;
@@ -98,7 +86,12 @@ export type BingoClaimedEvent = {
 
 export type BingoVerifiedEvent = {
   claimId: string;
-  playerId: string;
-  playerName: string;
   status: string;
+  playerName: string;
+};
+
+export type BoardRegeneratedEvent = {
+  roomCode: string;
+  board: BoardCell[][];
+  markedCells: MarkedCell[];
 };

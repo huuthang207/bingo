@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertBox, PageShell, PixelButton, PixelPanel, StatCard, StatusBadge } from "@/components/PixelUi";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import type { CreateRoomResponse } from "@/lib/types";
 
@@ -11,6 +12,12 @@ type UploadResponse = {
   label: string | null;
 };
 
+type WinnerEstimate = {
+  averageFirstWin: number;
+  luckyOnePercent: number;
+  typicalWinners: number;
+};
+
 function toAbsoluteImageUrl(url: string) {
   if (/^https?:\/\//.test(url)) {
     return url;
@@ -19,8 +26,29 @@ function toAbsoluteImageUrl(url: string) {
   return `${API_BASE_URL}${url}`;
 }
 
-function appendItemLine(currentItems: string, line: string) {
-  return currentItems.trimEnd() ? `${currentItems.trimEnd()}\n${line}` : line;
+function appendItemLines(currentItems: string, lines: string[]) {
+  const nextLines = lines.map((line) => line.trim()).filter(Boolean);
+
+  if (!nextLines.length) {
+    return currentItems;
+  }
+
+  return currentItems.trimEnd() ? `${currentItems.trimEnd()}\n${nextLines.join("\n")}` : nextLines.join("\n");
+}
+
+function fileNameLabel(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, "") || "Image";
+}
+
+function randomUniqueNumbers(count: number, min: number, max: number) {
+  const pool = Array.from({ length: max - min + 1 }, (_, index) => min + index);
+
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+  }
+
+  return pool.slice(0, count).map(String);
 }
 
 function parseItems(rawItems: string) {
@@ -35,7 +63,7 @@ function parseItems(rawItems: string) {
         return {
           type: "image",
           value: imageUrl,
-          label: label || "Hình ảnh",
+          label: label || "Image",
         };
       }
 
@@ -46,58 +74,206 @@ function parseItems(rawItems: string) {
     });
 }
 
+function getWinningLines(boardSize: number, winRules: { horizontal: boolean; vertical: boolean; diagonal: boolean }) {
+  const lines: number[][] = [];
+
+  if (winRules.horizontal) {
+    for (let row = 0; row < boardSize; row += 1) {
+      lines.push(Array.from({ length: boardSize }, (_, col) => row * boardSize + col));
+    }
+  }
+
+  if (winRules.vertical) {
+    for (let col = 0; col < boardSize; col += 1) {
+      lines.push(Array.from({ length: boardSize }, (_, row) => row * boardSize + col));
+    }
+  }
+
+  if (winRules.diagonal) {
+    lines.push(Array.from({ length: boardSize }, (_, index) => index * boardSize + index));
+    lines.push(Array.from({ length: boardSize }, (_, index) => index * boardSize + (boardSize - 1 - index)));
+  }
+
+  return lines;
+}
+
+function hasBingo(cellItems: Array<number | null>, calledItems: Set<number>, lines: number[][]) {
+  return lines.some((line) => line.every((cellIndex) => cellItems[cellIndex] === null || calledItems.has(cellItems[cellIndex])));
+}
+
+function shuffledIndexes(length: number) {
+  const indexes = Array.from({ length }, (_, index) => index);
+
+  for (let index = indexes.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [indexes[index], indexes[swapIndex]] = [indexes[swapIndex], indexes[index]];
+  }
+
+  return indexes;
+}
+
+function estimateFirstWinner(
+  itemCount: number,
+  playerCount: number,
+  boardSize: number,
+  hasFreeCell: boolean,
+  winRules: { horizontal: boolean; vertical: boolean; diagonal: boolean },
+) {
+  const totalCells = boardSize * boardSize;
+  const requiredItems = hasFreeCell ? totalCells - 1 : totalCells;
+
+  if (itemCount < requiredItems || playerCount <= 0 || (!winRules.horizontal && !winRules.vertical && !winRules.diagonal)) {
+    return null;
+  }
+
+  const centerIndex = Math.floor(totalCells / 2);
+  const lines = getWinningLines(boardSize, winRules);
+  const iterations = 80;
+  const firstWinCalls: number[] = [];
+  const winnerCounts: number[] = [];
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const boards = Array.from({ length: playerCount }, () => {
+      const boardItems = shuffledIndexes(itemCount).slice(0, requiredItems);
+      return Array.from({ length: totalCells }, (_, index) => hasFreeCell && index === centerIndex ? null : boardItems.shift() ?? null);
+    });
+    const callOrder = shuffledIndexes(itemCount);
+    const calledItems = new Set<number>();
+
+    for (let callIndex = 0; callIndex < callOrder.length; callIndex += 1) {
+      calledItems.add(callOrder[callIndex]);
+      const winners = boards.filter((board) => hasBingo(board, calledItems, lines)).length;
+
+      if (winners > 0) {
+        firstWinCalls.push(callIndex + 1);
+        winnerCounts.push(winners);
+        break;
+      }
+    }
+  }
+
+  if (!firstWinCalls.length) {
+    return null;
+  }
+
+  const sortedCalls = [...firstWinCalls].sort((a, b) => a - b);
+  const sortedWinnerCounts = [...winnerCounts].sort((a, b) => a - b);
+  const averageFirstWin = Math.round(firstWinCalls.reduce((sum, calls) => sum + calls, 0) / firstWinCalls.length);
+  const luckyOnePercent = sortedCalls[Math.max(0, Math.floor(sortedCalls.length * 0.01) - 1)];
+  const typicalWinners = sortedWinnerCounts[Math.floor(sortedWinnerCounts.length / 2)];
+
+  return { averageFirstWin, luckyOnePercent, typicalWinners };
+}
+
 export function CreateRoomClient() {
-  const [title, setTitle] = useState("Đêm Bingo vui vẻ");
+  const [title, setTitle] = useState("Pixel Bingo Night");
   const [items, setItems] = useState(starterItems);
+  const [boardSize, setBoardSize] = useState(5);
   const [hasFreeCell, setHasFreeCell] = useState(true);
   const [horizontal, setHorizontal] = useState(true);
   const [vertical, setVertical] = useState(true);
   const [diagonal, setDiagonal] = useState(true);
   const [result, setResult] = useState<CreateRoomResponse | null>(null);
-  const [imageLabel, setImageLabel] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [estimatedPlayers, setEstimatedPlayers] = useState(50);
+  const [winnerEstimate, setWinnerEstimate] = useState<WinnerEstimate | null>(null);
+  const [winnerEstimatePlayerCount, setWinnerEstimatePlayerCount] = useState(estimatedPlayers);
+  const [randomNumberCount, setRandomNumberCount] = useState(25);
+  const [randomNumberMin, setRandomNumberMin] = useState(1);
+  const [randomNumberMax, setRandomNumberMax] = useState(99);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [itemActionError, setItemActionError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   const parsedItems = useMemo(() => parseItems(items), [items]);
-  const requiredItems = hasFreeCell ? 24 : 25;
+  const itemTypeCounts = useMemo(() => ({
+    image: parsedItems.filter((item) => item.type === "image").length,
+    number: parsedItems.filter((item) => item.type === "number").length,
+    text: parsedItems.filter((item) => item.type === "text").length,
+  }), [parsedItems]);
+  const winRules = useMemo(() => ({ horizontal, vertical, diagonal }), [horizontal, vertical, diagonal]);
+  const requiredItems = hasFreeCell ? boardSize * boardSize - 1 : boardSize * boardSize;
   const canSubmit = title.trim().length > 0 && parsedItems.length >= requiredItems && (horizontal || vertical || diagonal);
 
-  async function uploadImageItem() {
-    if (!imageFile) {
-      setUploadError("Hãy chọn một file ảnh.");
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setWinnerEstimate(estimateFirstWinner(parsedItems.length, estimatedPlayers, boardSize, hasFreeCell, winRules));
+      setWinnerEstimatePlayerCount(estimatedPlayers);
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [boardSize, estimatedPlayers, hasFreeCell, parsedItems.length, winRules]);
+
+  function addRandomNumbers() {
+    setItemActionError(null);
+
+    if (!Number.isInteger(randomNumberCount) || randomNumberCount <= 0) {
+      setItemActionError("Number count must be greater than 0.");
       return;
     }
 
-    setUploadError(null);
+    if (randomNumberMin > randomNumberMax) {
+      setItemActionError("Minimum number must be less than or equal to maximum number.");
+      return;
+    }
+
+    const rangeSize = randomNumberMax - randomNumberMin + 1;
+
+    if (randomNumberCount > rangeSize) {
+      setItemActionError(`Range only has ${rangeSize} unique numbers.`);
+      return;
+    }
+
+    setItems((currentItems) => appendItemLines(currentItems, randomUniqueNumbers(randomNumberCount, randomNumberMin, randomNumberMax)));
+  }
+
+  function clearItems() {
+    setItemActionError(null);
+    setItems("");
+  }
+
+  async function uploadImageItems() {
+    if (!imageFiles.length) {
+      setItemActionError("Please choose one or more image files.");
+      return;
+    }
+
+    setItemActionError(null);
+    setUploadProgress(null);
     setIsUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", imageFile);
-      formData.append("label", imageLabel);
+      const imageLines: string[] = [];
 
-      const response = await fetch(`${API_BASE_URL}/uploads`, {
-        method: "POST",
-        body: formData,
-      });
+      for (const [index, imageFile] of imageFiles.entries()) {
+        setUploadProgress(`Uploading ${index + 1}/${imageFiles.length}`);
+        const formData = new FormData();
+        formData.append("file", imageFile);
+        formData.append("label", fileNameLabel(imageFile.name));
 
-      const payload = await response.json().catch(() => ({ message: "Không thể upload ảnh." }));
+        const response = await fetch(`${API_BASE_URL}/uploads`, {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!response.ok) {
-        throw new Error(payload.message ?? "Không thể upload ảnh.");
+        const payload = await response.json().catch(() => ({ message: "Could not upload the image." }));
+
+        if (!response.ok) {
+          throw new Error(payload.message ?? "Could not upload the image.");
+        }
+
+        const uploaded = payload as UploadResponse;
+        const label = (uploaded.label ?? fileNameLabel(imageFile.name)) || "Image";
+        imageLines.push(`image|${toAbsoluteImageUrl(uploaded.url)}|${label}`);
       }
 
-      const uploaded = payload as UploadResponse;
-      const label = (uploaded.label ?? imageLabel.trim()) || "Hình ảnh";
-      const imageLine = `image|${toAbsoluteImageUrl(uploaded.url)}|${label}`;
-      setItems((currentItems) => appendItemLine(currentItems, imageLine));
-      setImageFile(null);
-      setImageLabel("");
+      setItems((currentItems) => appendItemLines(currentItems, imageLines));
+      setImageFiles([]);
+      setUploadProgress(`Uploaded ${imageLines.length} image${imageLines.length === 1 ? "" : "s"}.`);
     } catch (caught) {
-      setUploadError(caught instanceof Error ? caught.message : "Không thể upload ảnh.");
+      setItemActionError(caught instanceof Error ? caught.message : "Could not upload the images.");
     } finally {
       setIsUploading(false);
     }
@@ -112,7 +288,7 @@ export function CreateRoomClient() {
         method: "POST",
         body: JSON.stringify({
           title,
-          boardSize: 5,
+          boardSize,
           hasFreeCell,
           winRules: { horizontal, vertical, diagonal },
           items: parsedItems,
@@ -121,153 +297,170 @@ export function CreateRoomClient() {
 
       setResult(createdRoom);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Không thể tạo phòng.");
+      setError(caught instanceof Error ? caught.message : "Could not create the room.");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#f7d64a] px-3 py-5 text-slate-950 sm:px-5 sm:py-8">
-      <div className="absolute left-[-8rem] top-[-8rem] h-80 w-80 rounded-full bg-cyan-300 blur-3xl" />
-      <div className="absolute bottom-[-10rem] right-[-8rem] h-96 w-96 rounded-full bg-rose-400 blur-3xl" />
-      <div className="relative mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="flex flex-col justify-between rounded-[1.5rem] border-4 border-slate-950 bg-white p-5 shadow-[8px_8px_0_#0f172a] sm:rounded-[2rem] sm:p-8 sm:shadow-[14px_14px_0_#0f172a]">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.35em] text-rose-600">Bingo control room</p>
-            <h1 className="mt-4 text-4xl font-black leading-none tracking-tight sm:text-6xl">Tạo sàn Bingo</h1>
-            <p className="mt-5 text-lg font-semibold leading-8 text-slate-700">
-              Nhập danh sách số hoặc từ khóa, chọn luật thắng, rồi chia sẻ link cho người chơi.
-            </p>
+    <PageShell>
+      <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr]">
+        <aside className="space-y-5 lg:sticky lg:top-6 lg:self-start">
+          <PixelPanel dark className="p-5 sm:p-7">
+            <StatusBadge tone="warning">Create room</StatusBadge>
+            <h1 className="pixel-title mt-5 text-4xl leading-tight sm:text-5xl">Create Bingo Arena</h1>
+            <p className="mt-5 font-bold leading-7 text-pixel-muted">Enter items, choose win rules, then share the link so every player gets a unique board.</p>
+          </PixelPanel>
+          <StatCard label="Item ready" tone={parsedItems.length >= requiredItems ? "green" : "gold"} value={`${parsedItems.length}/${requiredItems}`} />
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Numbers" tone="cyan" value={itemTypeCounts.number} />
+            <StatCard label="Text" tone="pink" value={itemTypeCounts.text} />
+            <StatCard label="Images" tone="green" value={itemTypeCounts.image} />
           </div>
-          <div className="mt-8 rounded-3xl border-2 border-slate-950 bg-cyan-100 p-5">
-            <p className="text-sm font-black uppercase tracking-[0.2em]">Đủ item?</p>
-            <p className="mt-2 text-4xl font-black">{parsedItems.length}/{requiredItems}</p>
-            <p className="mt-1 font-semibold text-slate-700">Board 5x5 {hasFreeCell ? "có" : "không có"} ô FREE.</p>
-          </div>
-        </section>
+          <PixelPanel className="p-4 sm:p-5">
+            <p className="pixel-label text-slate-600">Bingo win estimate</p>
+            <label className="mt-3 block text-sm font-black text-slate-700" htmlFor="estimated-players">
+              Estimated players
+              <input className="pixel-input mt-2 px-2 py-1 text-sm" id="estimated-players" min={1} onChange={(event) => setEstimatedPlayers(Number(event.target.value))} type="number" value={estimatedPlayers} />
+            </label>
+            {winnerEstimate ? (
+              <div className="mt-4 space-y-3 text-sm font-black leading-6 text-slate-700">
+                <p>With {winnerEstimatePlayerCount} players vying for a Bingo, you will call about <span className="font-pixel text-xl text-pixel-ink">{winnerEstimate.averageFirstWin}</span> items before someone wins.</p>
+                <p>There is a 1% chance that a lucky player wins after calling <span className="font-pixel text-xl text-pixel-ink">{winnerEstimate.luckyOnePercent}</span> items.</p>
+                <p>Typically, <span className="font-pixel text-xl text-pixel-ink">{winnerEstimate.typicalWinners}</span> player{winnerEstimate.typicalWinners === 1 ? "" : "s"} will win at a time.</p>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm font-bold text-slate-600">Add enough items and at least one win rule to estimate the first winner.</p>
+            )}
+          </PixelPanel>
+        </aside>
 
-        <section className="rounded-[1.5rem] border-4 border-slate-950 bg-slate-950 p-2 shadow-[8px_8px_0_rgba(15,23,42,0.35)] sm:rounded-[2rem] sm:p-3 sm:shadow-[14px_14px_0_rgba(15,23,42,0.35)]">
-          <div className="rounded-[1.25rem] bg-white p-4 sm:rounded-[1.5rem] sm:p-6">
-            <label className="block text-sm font-black uppercase tracking-[0.24em] text-slate-500" htmlFor="title">Tên game</label>
-            <input
-              className="mt-3 w-full rounded-2xl border-2 border-slate-950 bg-amber-50 px-4 py-3 text-lg font-bold outline-none focus:bg-white focus:ring-4 focus:ring-cyan-300"
-              id="title"
-              onChange={(event) => setTitle(event.target.value)}
-              value={title}
-            />
+        <section className="space-y-5">
+          <PixelPanel className="p-4 sm:p-6">
+            <label className="pixel-label text-slate-600" htmlFor="title">Game title</label>
+            <input className="pixel-input mt-3" id="title" onChange={(event) => setTitle(event.target.value)} value={title} />
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <label className="rounded-2xl border-2 border-slate-950 bg-slate-50 p-4 font-bold">
-                <input checked={hasFreeCell} className="mr-3" onChange={(event) => setHasFreeCell(event.target.checked)} type="checkbox" />
-                Có ô FREE giữa board
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <label className="flex min-h-16 items-center gap-3 border-4 border-pixel-ink bg-pixel-cyan p-4 font-black shadow-[4px_4px_0_#10101f]">
+                <input checked={hasFreeCell} className="h-5 w-5 accent-pixel-ink" onChange={(event) => setHasFreeCell(event.target.checked)} type="checkbox" />
+                Use a FREE center cell
               </label>
-              <div className="rounded-2xl border-2 border-slate-950 bg-rose-50 p-4 font-bold">Board MVP: 5 × 5</div>
+              <div className="border-4 border-pixel-ink bg-pixel-pink p-4 font-black text-pixel-ink shadow-[4px_4px_0_#10101f]">
+                <p className="font-pixel text-sm font-black uppercase tracking-[0.08em]">Board size</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {[5, 6, 7].map((size) => (
+                    <button className={`${boardSize === size ? "bg-pixel-gold" : "bg-white"} border-2 border-pixel-ink px-2 py-2 font-pixel text-sm font-black shadow-[2px_2px_0_#10101f]`} key={size} onClick={() => setBoardSize(size)} type="button">
+                      {size}x{size}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
+          </PixelPanel>
 
-            <div className="mt-6">
-              <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">Luật thắng</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                {[
-                  ["Ngang", horizontal, setHorizontal],
-                  ["Dọc", vertical, setVertical],
-                  ["Chéo", diagonal, setDiagonal],
-                ].map(([label, checked, setter]) => (
-                  <label className="rounded-2xl border-2 border-slate-950 bg-white p-4 font-black shadow-[4px_4px_0_#0f172a]" key={label as string}>
-                    <input checked={checked as boolean} className="mr-3" onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} type="checkbox" />
-                    {label as string}
+          <PixelPanel className="p-4 sm:p-6">
+            <p className="pixel-label text-slate-600">Win rules</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              {[
+                ["Rows", horizontal, setHorizontal],
+                ["Columns", vertical, setVertical],
+                ["Diagonals", diagonal, setDiagonal],
+              ].map(([label, checked, setter]) => (
+                <label className={`${checked ? "bg-pixel-gold" : "bg-white"} flex min-h-14 items-center gap-3 border-4 border-pixel-ink p-3 font-black shadow-[4px_4px_0_#10101f]`} key={label as string}>
+                  <input checked={checked as boolean} className="h-5 w-5 accent-pixel-ink" onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} type="checkbox" />
+                  {label as string}
+                </label>
+              ))}
+            </div>
+          </PixelPanel>
+
+          <PixelPanel className="p-4 sm:p-6">
+            <p className="pixel-label text-slate-600">Item list</p>
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div className="border-4 border-pixel-ink bg-pixel-cyan p-3 shadow-[4px_4px_0_#10101f]">
+                <p className="font-pixel text-sm font-black uppercase tracking-[0.08em] text-pixel-ink">Add random numbers</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <label className="text-sm font-black" htmlFor="random-count">
+                    Count
+                    <input className="pixel-input mt-1 px-2 py-1 text-sm" id="random-count" min={1} onChange={(event) => setRandomNumberCount(Number(event.target.value))} type="number" value={randomNumberCount} />
                   </label>
-                ))}
+                  <label className="text-sm font-black" htmlFor="random-min">
+                    From
+                    <input className="pixel-input mt-1 px-2 py-1 text-sm" id="random-min" onChange={(event) => setRandomNumberMin(Number(event.target.value))} type="number" value={randomNumberMin} />
+                  </label>
+                  <label className="text-sm font-black" htmlFor="random-max">
+                    To
+                    <input className="pixel-input mt-1 px-2 py-1 text-sm" id="random-max" onChange={(event) => setRandomNumberMax(Number(event.target.value))} type="number" value={randomNumberMax} />
+                  </label>
+                </div>
+                <PixelButton className="mt-3 w-full text-sm" onClick={addRandomNumbers} variant="secondary">
+                  Add numbers
+                </PixelButton>
               </div>
-            </div>
 
-            <label className="mt-6 block text-sm font-black uppercase tracking-[0.24em] text-slate-500" htmlFor="items">Danh sách item</label>
-            <div className="mt-3 rounded-2xl border-2 border-slate-950 bg-cyan-50 p-4 text-sm font-bold text-slate-700">
-              <p>Mỗi dòng là một item. Số sẽ tự nhận là number, chữ là text.</p>
-              <p className="mt-1 font-mono text-xs">Ảnh: image|https://example.com/photo.jpg|Tên ảnh</p>
-            </div>
-            <textarea
-              className="mt-3 min-h-64 w-full rounded-2xl border-2 border-slate-950 bg-slate-50 px-4 py-3 font-mono text-sm outline-none focus:bg-white focus:ring-4 focus:ring-rose-300"
-              id="items"
-              onChange={(event) => setItems(event.target.value)}
-              value={items}
-            />
-
-            <div className="mt-4 rounded-2xl border-2 border-slate-950 bg-lime-50 p-4">
-              <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">Upload ảnh item</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-                <label className="block text-sm font-bold text-slate-700" htmlFor="image-file">
-                  File ảnh
-                  <input
-                    accept="image/jpeg,image/png,image/webp"
-                    className="mt-2 w-full rounded-xl border-2 border-slate-950 bg-white px-3 py-2 text-sm font-semibold"
-                    id="image-file"
-                    onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
-                    type="file"
-                  />
+              <div className="border-4 border-pixel-ink bg-pixel-green p-3 shadow-[4px_4px_0_#10101f]">
+                <p className="font-pixel text-sm font-black uppercase tracking-[0.08em] text-pixel-ink">Upload images</p>
+                <label className="mt-3 block text-sm font-black" htmlFor="image-files">
+                  Choose images
+                  <input accept="image/jpeg,image/png,image/webp" className="pixel-input mt-1 px-2 py-1 text-sm" id="image-files" multiple onChange={(event) => setImageFiles(Array.from(event.target.files ?? []))} type="file" />
                 </label>
-                <label className="block text-sm font-bold text-slate-700" htmlFor="image-label">
-                  Tên ảnh
-                  <input
-                    className="mt-2 w-full rounded-xl border-2 border-slate-950 bg-white px-3 py-2 font-semibold outline-none focus:ring-4 focus:ring-lime-300"
-                    id="image-label"
-                    onChange={(event) => setImageLabel(event.target.value)}
-                    placeholder="Ví dụ: Logo đội A"
-                    value={imageLabel}
-                  />
-                </label>
-                <button
-                  className="rounded-xl border-2 border-slate-950 bg-lime-300 px-4 py-3 font-black shadow-[4px_4px_0_#0f172a] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:bg-slate-200"
-                  disabled={!imageFile || isUploading}
-                  onClick={uploadImageItem}
-                  type="button"
-                >
-                  {isUploading ? "Đang upload..." : "Thêm ảnh"}
-                </button>
-              </div>
-              <p className="mt-2 text-xs font-bold text-slate-500">Hỗ trợ jpg, png, webp tối đa 2MB. Ảnh upload sẽ được thêm vào danh sách item bên trên.</p>
-              {uploadError ? <p className="mt-3 rounded-xl bg-red-100 px-3 py-2 text-sm font-bold text-red-700">{uploadError}</p> : null}
-            </div>
-
-            <div className="mt-4 grid gap-2 rounded-2xl border-2 border-slate-950 bg-slate-50 p-4 sm:grid-cols-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Số</p>
-                <p className="text-2xl font-black">{parsedItems.filter((item) => item.type === "number").length}</p>
-              </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Chữ</p>
-                <p className="text-2xl font-black">{parsedItems.filter((item) => item.type === "text").length}</p>
-              </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Ảnh</p>
-                <p className="text-2xl font-black">{parsedItems.filter((item) => item.type === "image").length}</p>
+                <PixelButton className="mt-3 w-full text-sm" disabled={!imageFiles.length || isUploading} onClick={uploadImageItems} variant="success">
+                  {isUploading ? uploadProgress ?? "Uploading" : `Add ${imageFiles.length || ""} image${imageFiles.length === 1 ? "" : "s"}`}
+                </PixelButton>
+                <p className="mt-2 text-xs font-bold text-pixel-ink/75">JPG, PNG, WEBP up to 2MB each.</p>
               </div>
             </div>
 
-            {error ? <p className="mt-4 rounded-2xl bg-red-100 px-4 py-3 font-bold text-red-700">{error}</p> : null}
+            {itemActionError ? <AlertBox className="mt-4" tone="danger">{itemActionError}</AlertBox> : null}
+            {uploadProgress && !isUploading ? <AlertBox className="mt-4" tone="success">{uploadProgress}</AlertBox> : null}
 
-            <button
-              className="mt-6 w-full rounded-2xl border-4 border-slate-950 bg-rose-500 px-6 py-4 text-xl font-black text-white shadow-[8px_8px_0_#0f172a] transition hover:-translate-y-1 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
-              disabled={!canSubmit || isSubmitting}
-              onClick={createRoom}
-              type="button"
-            >
-              {isSubmitting ? "Đang tạo phòng..." : "Tạo phòng Bingo"}
-            </button>
+            <div className="mt-5 border-4 border-pixel-ink bg-white p-3 shadow-[4px_4px_0_#10101f]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-pixel text-sm font-black uppercase tracking-[0.08em] text-pixel-ink">Preview ({parsedItems.length})</p>
+                <button className="pixel-badge bg-pixel-paper" onClick={clearItems} type="button">Clear</button>
+              </div>
+              <div className="mt-3 flex max-h-36 flex-wrap gap-2 overflow-auto pr-1">
+                {parsedItems.length ? parsedItems.slice(0, 30).map((item, index) => (
+                  <span className="pixel-chip max-w-36 truncate" key={`${item.value}-${index}`}>
+                    {item.type === "image" ? "Image" : item.label ?? item.value}
+                  </span>
+                )) : <p className="font-bold text-slate-600">No items yet. Add random numbers or upload images to start.</p>}
+                {parsedItems.length > 30 ? <span className="pixel-chip bg-pixel-gold">+{parsedItems.length - 30} more</span> : null}
+              </div>
+            </div>
+
+            <details className="mt-5 border-4 border-pixel-ink bg-slate-100 p-3 shadow-[4px_4px_0_#10101f]">
+              <summary className="pixel-label cursor-pointer text-slate-600">Advanced edit</summary>
+              <AlertBox className="mt-3" tone="info">
+                <p>Each line is one item. Numeric lines become number items; other lines become text items.</p>
+                <p className="mt-1 break-all font-mono text-xs">Image: image|https://example.com/photo.jpg|Image name</p>
+              </AlertBox>
+              <textarea className="pixel-textarea mt-4 min-h-56 font-mono text-sm" id="items" onChange={(event) => setItems(event.target.value)} value={items} />
+            </details>
+          </PixelPanel>
+
+          {error ? <AlertBox tone="danger">{error}</AlertBox> : null}
+
+          <PixelPanel className="p-4 sm:p-6">
+            <PixelButton className="w-full text-base sm:text-lg" disabled={!canSubmit || isSubmitting} onClick={createRoom}>
+              {isSubmitting ? "Creating room" : "Create Bingo Room"}
+            </PixelButton>
+            {!canSubmit ? <p className="mt-3 text-sm font-bold text-slate-600">You need a game title, enough items, and at least one win rule.</p> : null}
 
             {result ? (
-              <div className="mt-6 rounded-3xl border-4 border-slate-950 bg-lime-200 p-5">
-                <p className="text-sm font-black uppercase tracking-[0.2em]">Phòng đã sẵn sàng</p>
-                <p className="mt-2 text-4xl font-black">{result.roomCode}</p>
+              <div className="mt-5 border-4 border-pixel-ink bg-pixel-green p-4 shadow-[4px_4px_0_#10101f]">
+                <p className="pixel-label text-pixel-ink/70">Room is ready</p>
+                <p className="mt-2 font-pixel text-4xl font-black text-pixel-ink">{result.roomCode}</p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <a className="rounded-2xl bg-slate-950 px-4 py-3 text-center font-black text-white" href={result.hostUrl}>Vào trang host</a>
-                  <a className="rounded-2xl bg-white px-4 py-3 text-center font-black text-slate-950 ring-2 ring-slate-950" href={result.playerUrl}>Mở link player</a>
+                  <a className="pixel-button pixel-button-primary" href={result.hostUrl}>Open host</a>
+                  <a className="pixel-button pixel-button-secondary" href={result.playerUrl}>Open player</a>
                 </div>
               </div>
             ) : null}
-          </div>
+          </PixelPanel>
         </section>
       </div>
-    </main>
+    </PageShell>
   );
 }

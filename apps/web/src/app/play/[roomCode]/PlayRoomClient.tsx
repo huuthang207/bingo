@@ -5,9 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { BingoBoard } from "@/components/BingoBoard";
 import { CalledItemCard } from "@/components/CalledItemCard";
+import { AlertBox, PageShell, PixelButton, PixelPanel, StatusBadge } from "@/components/PixelUi";
 import { apiFetch } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
-import type { CalledItem, ItemCalledEvent, JoinRoomResponse, PlayerState, RoomStateEvent } from "@/lib/types";
+import { playSound } from "@/lib/sounds";
+import type { BingoVerifiedEvent, BoardRegeneratedEvent, CalledItem, ItemCalledEvent, JoinRoomResponse, PlayerState, RoomStateEvent } from "@/lib/types";
 
 type PlayRoomClientProps = {
   roomCode: string;
@@ -37,6 +39,12 @@ function playCalledItemSound(audioContextRef: React.MutableRefObject<AudioContex
   oscillator.stop(now + 0.24);
 }
 
+function roomStatusTone(status: string) {
+  if (status === "playing") return "success";
+  if (status === "ended") return "danger";
+  return "warning";
+}
+
 export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   const [name, setName] = useState("");
   const [playerToken, setPlayerToken] = useState<string | null>(null);
@@ -45,6 +53,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   const [markedCells, setMarkedCells] = useState<MarkedCell[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [winnerName, setWinnerName] = useState<string | null>(null);
   const [animatedCalledOrder, setAnimatedCalledOrder] = useState<number | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -58,6 +67,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   const playerName = state?.name ?? name;
   const roomStatus = state?.roomStatus ?? "waiting";
   const latestItem = useMemo(() => state?.calledItems.at(-1), [state?.calledItems]);
+  const calledItemIds = useMemo(() => new Set(state?.calledItems.map((called) => called.item.id) ?? []), [state?.calledItems]);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -90,6 +100,14 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
     });
     nextSocket.on("game_started", () => setState((current) => (current ? { ...current, roomStatus: "playing" } : current)));
     nextSocket.on("game_ended", () => setState((current) => (current ? { ...current, roomStatus: "ended" } : current)));
+    nextSocket.on("game_restarted", () => {
+      setError(null);
+      setSuccessMessage(null);
+      setWinnerName(null);
+      setAnimatedCalledOrder(null);
+      setMarkedCells([]);
+      setState((current) => (current ? { ...current, roomStatus: "waiting", calledItems: [], markedCells: [] } : current));
+    });
     nextSocket.on("item_called", (event: ItemCalledEvent) => {
       const calledItem: CalledItem = {
         id: `${event.item.id}:${event.calledOrder}`,
@@ -104,8 +122,22 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
       }
       setState((current) => current ? { ...current, calledItems: [...current.calledItems, calledItem] } : current);
     });
-    nextSocket.on("cell_marked", ({ markedCells: nextMarkedCells }: { markedCells: MarkedCell[] }) => setMarkedCells(nextMarkedCells));
-    nextSocket.on("bingo_verified", ({ playerName }: { playerName: string }) => setSuccessMessage(`${playerName} đã Bingo hợp lệ!`));
+    nextSocket.on("cell_marked", ({ markedCells: nextMarkedCells }: { markedCells: MarkedCell[] }) => {
+      playSound("card", 0.55);
+      setMarkedCells(nextMarkedCells);
+    });
+    nextSocket.on("board_regenerated", (event: BoardRegeneratedEvent) => {
+      setError(null);
+      setSuccessMessage("New Bingo card generated.");
+      setMarkedCells(event.markedCells);
+      setLocalBoard((current) => current ? { ...current, board: event.board } : current);
+      setState((current) => current ? { ...current, board: event.board, markedCells: event.markedCells } : current);
+    });
+    nextSocket.on("bingo_verified", (event: BingoVerifiedEvent) => {
+      playSound("winner", 0.75);
+      setWinnerName(event.playerName);
+      setSuccessMessage(`${event.playerName} won Bingo. The game has ended.`);
+    });
     nextSocket.on("error_message", ({ message }: { message: string }) => setError(message));
     nextSocket.connect();
 
@@ -161,7 +193,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
         winRules: { horizontal: true, vertical: true, diagonal: true },
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Không thể tham gia phòng.");
+      setError(caught instanceof Error ? caught.message : "Could not join the room.");
     } finally {
       setIsJoining(false);
     }
@@ -170,6 +202,16 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   function markCell(row: number, col: number) {
     setError(null);
     socket?.emit("mark_cell", { roomCode, playerToken, row, col });
+  }
+
+  function regenerateBoard() {
+    setError(null);
+    setSuccessMessage(null);
+    socket?.emit("regenerate_board", { roomCode, playerToken });
+  }
+
+  function closeWinnerPopup() {
+    setWinnerName(null);
   }
 
   function claimBingo() {
@@ -188,101 +230,105 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
 
   if (isLoadingState) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-white">
-        <p className="rounded-full border-2 border-white px-6 py-3 font-black tracking-[0.2em]">Đang khôi phục phòng...</p>
-      </main>
+      <PageShell className="flex items-center justify-center">
+        <StatusBadge tone="info">Restoring room...</StatusBadge>
+      </PageShell>
     );
   }
 
   if (!playerToken) {
     return (
-      <main className="relative min-h-screen overflow-hidden bg-slate-950 px-5 py-10 text-white">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,#f43f5e_0,transparent_28%),radial-gradient(circle_at_80%_10%,#22d3ee_0,transparent_24%),radial-gradient(circle_at_50%_90%,#facc15_0,transparent_30%)] opacity-80" />
-        <section className="relative mx-auto max-w-xl rounded-[2rem] border-4 border-white bg-slate-900/90 p-8 shadow-[14px_14px_0_#facc15] backdrop-blur">
-          <p className="text-sm font-black uppercase tracking-[0.35em] text-cyan-300">Phòng {roomCode}</p>
-          <h1 className="mt-4 text-5xl font-black leading-none">Lấy bảng Bingo của bạn</h1>
-          <p className="mt-5 text-lg font-semibold text-slate-300">Nhập tên để nhận một board riêng. Không cần tài khoản.</p>
-          <label className="mt-8 block text-sm font-black uppercase tracking-[0.22em] text-slate-400" htmlFor="player-name">Tên người chơi</label>
-          <input
-            className="mt-3 w-full rounded-2xl border-4 border-white bg-white px-4 py-4 text-xl font-black text-slate-950 outline-none focus:ring-4 focus:ring-cyan-300"
-            id="player-name"
-            maxLength={40}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Ví dụ: Minh Anh"
-            value={name}
-          />
-          {error ? <p className="mt-4 rounded-2xl bg-red-500 px-4 py-3 font-bold text-white">{error}</p> : null}
-          <button
-            className="mt-6 w-full rounded-2xl border-4 border-white bg-cyan-300 px-6 py-4 text-xl font-black text-slate-950 shadow-[8px_8px_0_#ffffff] transition hover:-translate-y-1 disabled:cursor-not-allowed disabled:bg-slate-500"
-            disabled={name.trim().length === 0 || isJoining}
-            onClick={joinRoom}
-            type="button"
-          >
-            {isJoining ? "Đang vào phòng..." : "Tham gia ngay"}
-          </button>
-        </section>
-      </main>
+      <PageShell className="flex items-center justify-center py-10" narrow>
+        <PixelPanel dark className="w-full p-5 sm:p-8">
+          <StatusBadge tone="info">Room {roomCode}</StatusBadge>
+          <h1 className="pixel-title mt-5 text-4xl leading-tight sm:text-6xl">Claim Your Bingo Board</h1>
+          <p className="mt-5 font-bold leading-7 text-pixel-muted">Enter your name to receive a unique board. No account needed, just the room link.</p>
+          <label className="pixel-label mt-8 block text-pixel-muted" htmlFor="player-name">Player name</label>
+          <input className="pixel-input mt-3" id="player-name" maxLength={40} onChange={(event) => setName(event.target.value)} placeholder="Example: Alex" value={name} />
+          {error ? <AlertBox className="mt-5" tone="danger">{error}</AlertBox> : null}
+          <PixelButton className="mt-6 w-full text-base" disabled={name.trim().length === 0 || isJoining} onClick={joinRoom} variant="secondary">
+            {isJoining ? "Joining room" : "Join now"}
+          </PixelButton>
+        </PixelPanel>
+      </PageShell>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#fff7dc] px-2.5 py-4 text-slate-950 sm:px-4 sm:py-6">
-      <div className="mx-auto max-w-5xl">
-        <header className="mb-5 rounded-[1.5rem] border-4 border-slate-950 bg-white p-4 shadow-[6px_6px_0_#0f172a] sm:mb-6 sm:rounded-[2rem] sm:p-5 sm:shadow-[10px_10px_0_#0f172a]">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.3em] text-rose-600">Phòng {roomCode}</p>
-              <h1 className="mt-2 text-2xl font-black sm:text-3xl">{playerName || "Người chơi"}</h1>
+    <PageShell className="py-4 pb-24 sm:py-5 sm:pb-6">
+      <div className="mx-auto max-w-5xl space-y-3 sm:space-y-4">
+        <PixelPanel dark className="p-3 sm:p-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="min-w-0">
+              <p className="pixel-label text-pixel-cyan">Room {roomCode}</p>
+              <h1 className="mt-1 truncate text-xl font-black text-pixel-cream sm:text-2xl">{playerName || "Player"}</h1>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div className="rounded-2xl border-2 border-slate-950 bg-amber-300 px-5 py-3 text-center font-black uppercase tracking-[0.15em]">
-                {roomStatus === "playing" ? "Đang chơi" : roomStatus === "ended" ? "Đã kết thúc" : "Đang chờ host"}
-              </div>
-              <div className={`rounded-2xl border-2 border-slate-950 px-5 py-3 text-center font-black uppercase tracking-[0.15em] ${isConnected ? "bg-lime-300" : "bg-slate-200"}`}>
-                {isConnected ? "Online" : "Offline"}
-              </div>
-              <button className={`rounded-2xl border-2 border-slate-950 px-5 py-3 text-center font-black uppercase tracking-[0.15em] ${soundEnabled ? "bg-cyan-300" : "bg-white"}`} onClick={toggleSound} type="button">
-                Âm: {soundEnabled ? "Bật" : "Tắt"}
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+              <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={roomStatusTone(roomStatus)}>{roomStatus === "playing" ? "Playing" : roomStatus === "ended" ? "Ended" : "Waiting"}</StatusBadge>
+              <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={isConnected ? "success" : "danger"}>{isConnected ? "Online" : "Offline"}</StatusBadge>
+              <button className={`pixel-badge justify-center px-2 text-[0.7rem] sm:text-xs ${soundEnabled ? "bg-pixel-cyan" : "bg-pixel-paper"}`} onClick={toggleSound} type="button">
+                Sound {soundEnabled ? "on" : "off"}
               </button>
             </div>
           </div>
-          <div className="mt-5 rounded-2xl bg-slate-950 px-3 py-3 text-white sm:px-5 sm:py-4">
-            <p className="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Item mới nhất</p>
-            <div className="mt-3">
-              <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} compact item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} order={latestItem?.calledOrder} />
-            </div>
-          </div>
-        </header>
+        </PixelPanel>
 
-        {error ? <p className="mb-5 rounded-2xl border-4 border-slate-950 bg-red-500 px-5 py-4 font-black text-white shadow-[6px_6px_0_#0f172a]">{error}</p> : null}
-        {successMessage ? <p className="mb-5 rounded-2xl border-4 border-slate-950 bg-lime-300 px-5 py-4 font-black text-slate-950 shadow-[6px_6px_0_#0f172a]">{successMessage}</p> : null}
+        <section className="grid gap-2 sm:gap-3">
+          <p className="pixel-label text-pixel-cyan">Latest item</p>
+          <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} compact item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} order={latestItem?.calledOrder} />
+        </section>
 
-        {board.length > 0 ? <BingoBoard board={board} markedCells={markedCells} onCellClick={markCell} disabled={roomStatus !== "playing" || !isConnected} /> : null}
+        {error ? <AlertBox tone="danger">{error}</AlertBox> : null}
+        {successMessage ? <AlertBox tone="success">{successMessage}</AlertBox> : null}
 
-        <button
-          className="mt-6 w-full rounded-[1.25rem] border-4 border-slate-950 bg-rose-500 px-6 py-4 text-2xl font-black text-white shadow-[6px_6px_0_#0f172a] transition hover:-translate-y-1 disabled:cursor-not-allowed disabled:bg-slate-300 sm:mt-8 sm:rounded-[1.5rem] sm:py-5 sm:text-3xl sm:shadow-[10px_10px_0_#0f172a]"
-          disabled={!isConnected || roomStatus !== "playing"}
-          onClick={claimBingo}
-          type="button"
-        >
-          BINGO!
-        </button>
+        {roomStatus === "waiting" ? (
+          <PixelButton className="w-full text-base" disabled={!isConnected} onClick={regenerateBoard} variant="secondary">
+            Generate new card
+          </PixelButton>
+        ) : null}
 
-        <section className="mt-6 rounded-[1.5rem] border-4 border-slate-950 bg-white p-4 sm:mt-8 sm:rounded-[2rem] sm:p-5">
-          <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">Đã gọi</p>
-          <div className="mt-4 flex flex-wrap gap-2">
+        {board.length > 0 ? <BingoBoard board={board} calledItemIds={calledItemIds} markedCells={markedCells} onCellClick={markCell} disabled={roomStatus !== "playing" || !isConnected} /> : null}
+
+        <div className="hidden sm:block">
+          <PixelButton className="w-full text-xl" disabled={!isConnected || roomStatus !== "playing"} onClick={claimBingo} variant="danger">
+            BINGO!
+          </PixelButton>
+        </div>
+
+        <details className="pixel-panel p-3 sm:p-4">
+          <summary className="pixel-label cursor-pointer text-slate-600">Called items ({state?.calledItems.length ?? 0})</summary>
+          <div className="mt-3 flex max-h-32 flex-wrap gap-2 overflow-auto pr-1 sm:max-h-40">
             {state?.calledItems.length ? (
               state.calledItems.map((called) => (
-                <span className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white" key={called.id}>
+                <span className="pixel-chip" key={called.id}>
                   {called.item.label ?? called.item.value}
                 </span>
               ))
             ) : (
-              <p className="font-semibold text-slate-500">Danh sách sẽ hiện ở đây khi host bắt đầu gọi item.</p>
+              <p className="font-bold text-slate-600">Called items will appear here once the host starts calling.</p>
             )}
           </div>
-        </section>
+        </details>
       </div>
-    </main>
+
+      {winnerName ? (
+        <div className="winner-overlay-enter fixed inset-0 z-40 flex items-center justify-center bg-pixel-ink/75 p-4">
+          <PixelPanel className="winner-panel-enter w-full max-w-md p-5 text-center sm:p-7">
+            <p className="pixel-label text-pixel-pink">Bingo winner</p>
+            <p className="mt-4 font-pixel text-4xl font-black uppercase leading-tight text-pixel-ink sm:text-5xl">{winnerName}</p>
+            <p className="mt-4 font-bold text-slate-700">The game has ended.</p>
+            <PixelButton className="mt-6 w-full" onClick={closeWinnerPopup} variant="secondary">
+              Close
+            </PixelButton>
+          </PixelPanel>
+        </div>
+      ) : null}
+
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t-4 border-pixel-ink bg-pixel-panel/95 p-2.5 shadow-[0_-6px_0_#10101f] backdrop-blur sm:hidden">
+        <PixelButton className="w-full text-xl" disabled={!isConnected || roomStatus !== "playing"} onClick={claimBingo} variant="danger">
+          BINGO!
+        </PixelButton>
+      </div>
+    </PageShell>
   );
 }

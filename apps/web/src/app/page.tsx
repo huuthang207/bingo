@@ -1,23 +1,45 @@
 import Link from "next/link";
+import { PageShell, PixelPanel, StatusBadge } from "@/components/PixelUi";
 
 export default function HomePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="rounded-3xl bg-white p-10 shadow-sm ring-1 ring-slate-200">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-blue-600">Bingo Realtime</p>
-        <h1 className="text-4xl font-bold tracking-tight text-slate-950 sm:text-6xl">Tạo phòng Bingo cho nhóm đông người</h1>
-        <p className="mt-6 text-lg leading-8 text-slate-600">
-          Host tạo phòng, người chơi nhập tên và tham gia bằng link. Game được đồng bộ realtime bằng Socket.IO.
-        </p>
-        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-          <Link className="rounded-full bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700" href="/create">
-            Tạo game mới
-          </Link>
-          <a className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700" href="#join">
-            Nhập mã phòng
-          </a>
-        </div>
+    <PageShell className="flex items-center py-10 sm:py-16" narrow>
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+        <section className="pixel-panel-dark p-5 sm:p-8 lg:p-10">
+          <StatusBadge tone="info">Bingo Realtime</StatusBadge>
+          <h1 className="pixel-title mt-6 text-4xl leading-tight sm:text-6xl lg:text-7xl">Pixel Bingo Party</h1>
+          <p className="mt-6 max-w-2xl text-lg font-bold leading-8 text-pixel-muted sm:text-xl">
+            Create a realtime Bingo room for large groups: the host calls items, players mark boards on their phones, and the big screen updates like an arcade scoreboard.
+          </p>
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            <Link className="pixel-button pixel-button-primary w-full" href="/create">
+              Create new game
+            </Link>
+            <a className="pixel-button pixel-button-secondary w-full" href="#join">
+              How to join
+            </a>
+          </div>
+        </section>
+
+        <PixelPanel className="p-5 sm:p-6" id="join">
+          <p className="pixel-label text-pixel-pink">How to play</p>
+          <div className="mt-5 grid gap-4">
+            {[
+              ["01", "The host creates a room and shares the QR code or link."],
+              ["02", "Players enter their names to receive unique boards."],
+              ["03", "When the board looks complete, tap BINGO for server verification."],
+            ].map(([step, text]) => (
+              <div className="grid grid-cols-[3.5rem_1fr] gap-3 border-4 border-pixel-ink bg-white p-3 shadow-[4px_4px_0_#10101f]" key={step}>
+                <span className="flex min-h-11 items-center justify-center bg-pixel-gold font-pixel text-xl font-black text-pixel-ink">{step}</span>
+                <p className="self-center font-bold leading-6 text-slate-700">{text}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-5 border-4 border-pixel-ink bg-pixel-cyan p-4 font-black text-pixel-ink shadow-[4px_4px_0_#10101f]">
+            Already have a room link? Open the player link from the host to jump straight into your board.
+          </p>
+        </PixelPanel>
       </div>
-    </main>
+    </PageShell>
   );
 }

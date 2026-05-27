@@ -142,38 +142,6 @@ roomsRouter.get("/:roomCode/host-state", async (request, response, next) => {
   }
 });
 
-roomsRouter.get("/:roomCode/display-state", async (request, response, next) => {
-  try {
-    const room = await prisma.room.findUnique({ where: { roomCode: request.params.roomCode } });
-
-    if (!room) {
-      response.status(404).json({ message: "Không tìm thấy phòng." });
-      return;
-    }
-
-    const [calledItems, playerCount, winners] = await Promise.all([
-      getCalledItems(room.id),
-      prisma.player.count({ where: { roomId: room.id } }),
-      prisma.player.findMany({
-        where: { roomId: room.id, isWinner: true },
-        orderBy: { joinedAt: "asc" },
-        select: { id: true, name: true },
-      }),
-    ]);
-
-    response.json({
-      roomCode: room.roomCode,
-      title: room.title,
-      status: room.status,
-      calledItems,
-      playerCount,
-      winners,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
 roomsRouter.get("/:roomCode/player-state", async (request, response, next) => {
   try {
     const playerToken = getAuthorizationToken(request.headers.authorization);

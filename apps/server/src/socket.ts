@@ -1,6 +1,7 @@
-import { markCellSchema } from "@bingo/shared";
+import { markCellSchema, type BingoItem, type MarkedCell } from "@bingo/shared";
 import type { Server } from "socket.io";
 import { checkWin } from "./bingo/checkWin.js";
+import { generateBoard } from "./bingo/generateBoard.js";
 import { prisma } from "./db.js";
 import { addMarkedCell, canMarkCell, getCalledItemIds } from "./services/game.js";
 import { logger } from "./services/logger.js";
@@ -54,23 +55,6 @@ export function registerSocketHandlers(io: Server) {
         board: parseBoard(result.player.boardData),
         markedCells: parseMarkedCells(result.player.markedCells),
         calledItems: await getCalledItems(result.room.id),
-      });
-    });
-
-    socket.on("join_display_room", async ({ roomCode }: { roomCode: string }) => {
-      const room = await prisma.room.findUnique({ where: { roomCode } });
-
-      if (!room) {
-        emitError(socket, "ROOM_NOT_FOUND", "Không tìm thấy phòng.");
-        return;
-      }
-
-      socket.join(`room:${roomCode}`);
-      logger.info("socket_join_display_room", { socketId: socket.id, roomCode });
-      socket.emit("room_state", {
-        roomCode,
-        status: room.status,
-        calledItems: await getCalledItems(room.id),
       });
     });
 
@@ -219,40 +203,131 @@ export function registerSocketHandlers(io: Server) {
         return;
       }
 
+      if (result.room.status !== "playing") {
+        emitError(socket, "INVALID_ROOM_STATUS", "Game is not accepting Bingo claims.");
+        return;
+      }
+
       const board = parseBoard(result.player.boardData);
       const markedCells = parseMarkedCells(result.player.markedCells);
       const winResult = checkWin(board, markedCells, getWinRules(result.room));
-      const claim = await prisma.bingoClaim.create({
-        data: {
-          roomId: result.room.id,
-          playerId: result.player.id,
-          status: winResult.valid ? "valid" : "invalid",
-          winningPattern: winResult.pattern ?? undefined,
-          reviewedAt: new Date(),
-        },
+      const now = new Date();
+
+      const outcome = await prisma.$transaction(async (tx) => {
+        const room = await tx.room.findUnique({ where: { id: result.room.id } });
+
+        if (!room || room.status !== "playing") {
+          return { type: "ended" as const };
+        }
+
+        const existingWinner = await tx.player.findFirst({ where: { roomId: room.id, isWinner: true }, select: { id: true } });
+
+        if (existingWinner) {
+          return { type: "ended" as const };
+        }
+
+        const claim = await tx.bingoClaim.create({
+          data: {
+            roomId: room.id,
+            playerId: result.player.id,
+            status: winResult.valid ? "valid" : "invalid",
+            winningPattern: winResult.pattern ?? undefined,
+            reviewedAt: now,
+          },
+        });
+
+        if (!winResult.valid) {
+          return { type: "invalid" as const, claim };
+        }
+
+        await tx.player.update({ where: { id: result.player.id }, data: { isWinner: true } });
+        await tx.room.update({ where: { id: room.id }, data: { status: "ended", endedAt: now } });
+
+        return { type: "valid" as const, claim };
       });
 
-      if (winResult.valid) {
-        await prisma.player.update({ where: { id: result.player.id }, data: { isWinner: true } });
+      if (outcome.type === "ended") {
+        emitError(socket, "GAME_ALREADY_ENDED", "Game already has a winner.");
+        return;
       }
 
-      logger.info("socket_claim_bingo", { socketId: socket.id, roomCode, playerId: result.player.id, claimId: claim.id, status: claim.status });
+      logger.info("socket_claim_bingo", { socketId: socket.id, roomCode, playerId: result.player.id, claimId: outcome.claim.id, status: outcome.claim.status });
       io.to(`host:${roomCode}`).emit("bingo_claimed", {
-        claimId: claim.id,
+        claimId: outcome.claim.id,
         playerId: result.player.id,
         playerName: result.player.name,
-        status: claim.status,
+        status: outcome.claim.status,
         winningPattern: winResult.pattern ?? null,
       });
 
-      if (winResult.valid) {
+      if (outcome.type === "valid") {
         io.to(`room:${roomCode}`).emit("bingo_verified", {
-          claimId: claim.id,
-          playerId: result.player.id,
+          claimId: outcome.claim.id,
+          status: outcome.claim.status,
           playerName: result.player.name,
-          status: claim.status,
         });
+        io.to(`room:${roomCode}`).emit("game_ended", { roomCode, endedAt: now.toISOString(), reason: "bingo_verified" });
       }
+    });
+
+    socket.on("restart_game", async ({ roomCode, hostToken }: { roomCode: string; hostToken?: string }) => {
+      if (!hostToken) {
+        emitError(socket, "INVALID_TOKEN", "Thiếu host token.");
+        return;
+      }
+
+      const room = await getRoomForHost(roomCode, hostToken);
+
+      if (!room) {
+        emitError(socket, "INVALID_TOKEN", "Host token không hợp lệ.");
+        return;
+      }
+
+      if (room.status !== "ended") {
+        emitError(socket, "INVALID_ROOM_STATUS", "Only ended games can be restarted.");
+        return;
+      }
+
+      await prisma.$transaction([
+        prisma.calledItem.deleteMany({ where: { roomId: room.id } }),
+        prisma.player.updateMany({ where: { roomId: room.id }, data: { markedCells: [], isWinner: false } }),
+        prisma.room.update({ where: { id: room.id }, data: { status: "waiting", endedAt: null } }),
+      ]);
+
+      logger.info("socket_restart_game", { socketId: socket.id, roomCode });
+      io.to(`room:${roomCode}`).emit("game_restarted", { roomCode, restartedAt: new Date().toISOString() });
+    });
+
+    socket.on("regenerate_board", async ({ roomCode, playerToken }: { roomCode: string; playerToken?: string }) => {
+      if (!playerToken) {
+        emitError(socket, "INVALID_TOKEN", "Thiếu player token.");
+        return;
+      }
+
+      const result = await getPlayerForToken(roomCode, playerToken);
+
+      if (!result) {
+        emitError(socket, "INVALID_TOKEN", "Player token không hợp lệ.");
+        return;
+      }
+
+      if (result.room.status !== "waiting") {
+        emitError(socket, "INVALID_ROOM_STATUS", "Cards can only be regenerated before the game starts.");
+        return;
+      }
+
+      const roomItems = await prisma.roomItem.findMany({ where: { roomId: result.room.id } });
+      const items: BingoItem[] = roomItems.map(toBingoItem);
+      const board = generateBoard(items, result.room.boardSize, result.room.hasFreeCell);
+      const markedCells: MarkedCell[] = [];
+
+      await prisma.player.update({
+        where: { id: result.player.id },
+        data: { boardData: board, markedCells, lastSeenAt: new Date() },
+      });
+
+      logger.info("socket_regenerate_board", { socketId: socket.id, roomCode, playerId: result.player.id });
+      socket.emit("board_regenerated", { roomCode, board, markedCells });
     });
 
     socket.on("end_game", async ({ roomCode, hostToken }: { roomCode: string; hostToken?: string }) => {

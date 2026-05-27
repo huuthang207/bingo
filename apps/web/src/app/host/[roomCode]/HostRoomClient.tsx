@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { CalledItemCard } from "@/components/CalledItemCard";
+import { AlertBox, PageShell, PixelButton, PixelPanel, StatCard, StatusBadge } from "@/components/PixelUi";
 import { apiFetch } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
 import type { BingoClaimedEvent, CalledItem, HostState, ItemCalledEvent } from "@/lib/types";
@@ -17,12 +18,8 @@ function publicPlayerUrl(origin: string, roomCode: string) {
   return `${origin}/play/${roomCode}`;
 }
 
-function publicDisplayUrl(origin: string, roomCode: string) {
-  return `${origin}/display/${roomCode}`;
-}
-
 function formatLastSeen(lastSeenAt: string) {
-  return new Intl.DateTimeFormat("vi-VN", {
+  return new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -51,6 +48,12 @@ function playCalledItemSound(audioContextRef: React.MutableRefObject<AudioContex
   oscillator.stop(now + 0.24);
 }
 
+function statusTone(status?: string) {
+  if (status === "playing") return "success";
+  if (status === "ended") return "danger";
+  return "warning";
+}
+
 export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
   const [hostState, setHostState] = useState<HostState | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -60,12 +63,15 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [publicOrigin, setPublicOrigin] = useState("");
+  const [showPlayersPopup, setShowPlayersPopup] = useState(false);
   const soundEnabledRef = useRef(soundEnabled);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   const playerUrl = publicPlayerUrl(publicOrigin, roomCode);
-  const displayUrl = publicDisplayUrl(publicOrigin, roomCode);
   const latestItem = useMemo(() => hostState?.calledItems.at(-1), [hostState?.calledItems]);
+  const onlinePlayers = useMemo(() => hostState?.players.filter((player) => player.isOnline) ?? [], [hostState?.players]);
+  const offlinePlayers = useMemo(() => hostState?.players.filter((player) => !player.isOnline) ?? [], [hostState?.players]);
+  const winners = useMemo(() => hostState?.claims.filter((claim) => claim.status === "valid") ?? [], [hostState?.claims]);
 
   useEffect(() => {
     setPublicOrigin(window.location.origin);
@@ -80,7 +86,7 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
       headers: { Authorization: `Bearer ${hostToken}` },
     })
       .then(setHostState)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Không thể tải phòng host."));
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not load the host room."));
   }, [hostToken, roomCode]);
 
   useEffect(() => {
@@ -94,6 +100,16 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     nextSocket.on("disconnect", () => setIsConnected(false));
     nextSocket.on("game_started", () => setHostState((current) => (current ? { ...current, status: "playing" } : current)));
     nextSocket.on("game_ended", () => setHostState((current) => (current ? { ...current, status: "ended" } : current)));
+    nextSocket.on("game_restarted", () => {
+      setError(null);
+      setAnimatedCalledOrder(null);
+      setHostState((current) => current ? {
+        ...current,
+        status: "waiting",
+        calledItems: [],
+        players: current.players.map((player) => ({ ...player, isWinner: false })),
+      } : current);
+    });
     nextSocket.on("item_called", (event: ItemCalledEvent) => {
       setHostState((current) => {
         if (!current) {
@@ -184,7 +200,7 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     }
   }
 
-  function emitHostEvent(eventName: "start_game" | "call_next_item" | "end_game") {
+  function emitHostEvent(eventName: "start_game" | "call_next_item" | "end_game" | "restart_game") {
     setError(null);
     socket?.emit(eventName, { roomCode, hostToken });
   }
@@ -199,123 +215,135 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
 
   if (!hostToken) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-white">
-        <section className="max-w-lg rounded-[2rem] border-4 border-white bg-rose-600 p-8 shadow-[12px_12px_0_#facc15]">
-          <p className="text-3xl font-black">Thiếu host token</p>
-          <p className="mt-3 font-semibold">Hãy mở đúng link host được tạo sau khi tạo phòng.</p>
-        </section>
-      </main>
+      <PageShell className="flex items-center justify-center" narrow>
+        <AlertBox tone="danger">
+          <p className="text-2xl font-black">Missing host token</p>
+          <p className="mt-2">Open the exact host link generated after creating the room.</p>
+        </AlertBox>
+      </PageShell>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#dff7ff] px-3 py-5 text-slate-950 sm:px-5 sm:py-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="rounded-[1.5rem] border-4 border-slate-950 bg-white p-4 shadow-[7px_7px_0_#0f172a] sm:rounded-[2rem] sm:p-6 sm:shadow-[12px_12px_0_#0f172a]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <PageShell>
+      <div className="space-y-6">
+        <PixelPanel dark className="p-4 sm:p-6">
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <p className="text-sm font-black uppercase tracking-[0.35em] text-rose-600">Host dashboard</p>
-              <h1 className="mt-2 text-3xl font-black leading-none sm:text-5xl">{hostState?.title ?? `Phòng ${roomCode}`}</h1>
+              <p className="pixel-label text-pixel-cyan">Host dashboard</p>
+              <h1 className="mt-2 text-3xl font-black leading-tight text-pixel-cream sm:text-5xl">{hostState?.title ?? `Room ${roomCode}`}</h1>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border-2 border-slate-950 bg-amber-300 px-5 py-3 text-center font-black">Mã: {roomCode}</div>
-              <div className={`rounded-2xl border-2 border-slate-950 px-5 py-3 text-center font-black ${isConnected ? "bg-lime-300" : "bg-slate-200"}`}>
-                {isConnected ? "Socket online" : "Socket offline"}
-              </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <StatusBadge tone="warning">Code {roomCode}</StatusBadge>
+              <StatusBadge tone={isConnected ? "success" : "danger"}>{isConnected ? "Online" : "Offline"}</StatusBadge>
+              <StatusBadge tone={statusTone(hostState?.status)}>{hostState?.status ?? "loading"}</StatusBadge>
             </div>
           </div>
-          <div className="mt-5 grid gap-4 rounded-2xl bg-slate-950 p-3 text-white sm:p-4 lg:grid-cols-[auto_1fr_auto] lg:items-center">
-            <div className="mx-auto rounded-2xl border-4 border-white bg-white p-3 shadow-[6px_6px_0_#22d3ee] lg:mx-0">
-              <QRCodeSVG bgColor="#ffffff" fgColor="#0f172a" level="M" size={132} value={playerUrl} />
-            </div>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Link người chơi</p>
-              <p className="mt-2 break-all text-lg font-black">{playerUrl}</p>
-              <p className="mt-2 text-sm font-bold text-slate-300">Người chơi có thể quét QR hoặc mở link này để vào phòng.</p>
-              <a className="mt-3 inline-flex rounded-full border-2 border-cyan-300 px-4 py-2 text-sm font-black text-cyan-300 transition hover:bg-cyan-300 hover:text-slate-950" href={displayUrl} rel="noreferrer" target="_blank">
-                Mở màn hình lớn
-              </a>
-            </div>
-            <button
-              className="rounded-2xl border-2 border-white bg-cyan-300 px-5 py-3 font-black text-slate-950 shadow-[5px_5px_0_#ffffff] transition hover:-translate-y-0.5"
-              onClick={copyInviteLink}
-              type="button"
-            >
-              {copyStatus === "copied" ? "Đã copy" : copyStatus === "failed" ? "Copy lỗi" : "Copy link"}
-            </button>
-          </div>
-        </header>
+        </PixelPanel>
 
-        {error ? <p className="mt-6 rounded-2xl border-4 border-slate-950 bg-red-500 px-5 py-4 font-black text-white shadow-[6px_6px_0_#0f172a]">{error}</p> : null}
+        {error ? <AlertBox tone="danger">{error}</AlertBox> : null}
 
-        <div className="mt-6 grid gap-5 lg:mt-8 lg:grid-cols-[0.85fr_1.15fr_0.9fr]">
-          <section className="rounded-[1.5rem] border-4 border-slate-950 bg-white p-5 shadow-[10px_10px_0_#0f172a]">
-            <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">Điều khiển</p>
-            <div className="mt-5 grid gap-4">
-              <button className="rounded-2xl border-4 border-slate-950 bg-lime-300 px-5 py-4 text-xl font-black shadow-[6px_6px_0_#0f172a] disabled:bg-slate-200" disabled={hostState?.status !== "waiting"} onClick={() => emitHostEvent("start_game")} type="button">
-                Start game
-              </button>
-              <button className="rounded-2xl border-4 border-slate-950 bg-amber-300 px-5 py-4 text-xl font-black shadow-[6px_6px_0_#0f172a] disabled:bg-slate-200" disabled={hostState?.status !== "playing"} onClick={() => emitHostEvent("call_next_item")} type="button">
-                Gọi item tiếp theo
-              </button>
-              <button className={`rounded-2xl border-4 border-slate-950 px-5 py-4 text-xl font-black shadow-[6px_6px_0_#0f172a] ${soundEnabled ? "bg-cyan-300" : "bg-slate-100"}`} onClick={toggleSound} type="button">
-                Âm thanh: {soundEnabled ? "Bật" : "Tắt"}
-              </button>
-              <button className="rounded-2xl border-4 border-slate-950 bg-rose-500 px-5 py-4 text-xl font-black text-white shadow-[6px_6px_0_#0f172a] disabled:bg-slate-300" disabled={hostState?.status === "ended"} onClick={() => emitHostEvent("end_game")} type="button">
-                Kết thúc game
-              </button>
-            </div>
-            <div className="mt-6 rounded-2xl border-2 border-slate-950 bg-slate-50 p-4">
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Trạng thái</p>
-              <p className="mt-2 text-3xl font-black">{hostState?.status ?? "loading"}</p>
-            </div>
+        <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr_0.9fr]">
+          <section className="space-y-5 lg:order-1">
+            <PixelPanel className="p-3 sm:p-4">
+              <p className="pixel-label text-slate-600">Controls</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "waiting"} onClick={() => emitHostEvent("start_game")} variant="success">
+                  Start
+                </PixelButton>
+                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "playing"} onClick={() => emitHostEvent("call_next_item")}>
+                  Call
+                </PixelButton>
+                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" onClick={toggleSound} variant={soundEnabled ? "secondary" : "ghost"}>
+                  Sound {soundEnabled ? "on" : "off"}
+                </PixelButton>
+                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status === "ended"} onClick={() => emitHostEvent("end_game")} variant="danger">
+                  End
+                </PixelButton>
+                <PixelButton className="col-span-2 min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "ended"} onClick={() => emitHostEvent("restart_game")} variant="secondary">
+                  Restart
+                </PixelButton>
+              </div>
+            </PixelPanel>
+
+            <PixelPanel className="p-4 sm:p-5">
+              <p className="pixel-label text-slate-600">Invite</p>
+              <div className="mt-4 grid gap-4">
+                <div className="mx-auto border-4 border-pixel-ink bg-white p-3 shadow-[4px_4px_0_#10101f]">
+                  <QRCodeSVG bgColor="#ffffff" fgColor="#10101f" level="M" size={132} value={playerUrl} />
+                </div>
+                <p className="break-all text-sm font-black text-slate-700">{playerUrl}</p>
+                <PixelButton className="w-full" onClick={copyInviteLink} variant="secondary">
+                  {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy link"}
+                </PixelButton>
+              </div>
+            </PixelPanel>
           </section>
 
-          <section className="rounded-[1.5rem] border-4 border-slate-950 bg-slate-950 p-5 text-white shadow-[10px_10px_0_rgba(15,23,42,0.35)]">
-            <p className="text-sm font-black uppercase tracking-[0.24em] text-cyan-300">Item mới nhất</p>
-            <div className="mt-4">
-              <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} order={latestItem?.calledOrder} />
-            </div>
-            <div className="mt-5 flex max-h-72 flex-wrap gap-2 overflow-auto">
-              {hostState?.calledItems.map((called) => (
-                <span className="rounded-full bg-cyan-300 px-4 py-2 text-sm font-black text-slate-950" key={called.id}>
-                  #{called.calledOrder} {called.item.label ?? called.item.value}
-                </span>
-              ))}
-            </div>
+          <section className="space-y-5 lg:order-2">
+            <p className="pixel-label text-pixel-cyan">Latest item</p>
+            <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} order={latestItem?.calledOrder} />
+            <PixelPanel className="p-4">
+              <p className="pixel-label text-slate-600">Recently called</p>
+              <div className="mt-4 flex max-h-72 flex-wrap gap-2 overflow-auto pr-1">
+                {hostState?.calledItems.length ? hostState.calledItems.map((called) => (
+                  <span className="pixel-chip max-w-full gap-1" key={called.id}>
+                    <span className="shrink-0 text-slate-500">#{called.calledOrder}</span>
+                    <span className="min-w-0 max-w-36 truncate sm:max-w-48">{called.item.label ?? (called.item.type === "image" ? "Image" : called.item.value)}</span>
+                  </span>
+                )) : <p className="font-bold text-slate-600">No items have been called yet.</p>}
+              </div>
+            </PixelPanel>
           </section>
 
-          <section className="grid gap-6">
-            <div className="rounded-[2rem] border-4 border-slate-950 bg-white p-5 shadow-[10px_10px_0_#0f172a]">
-              <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">Người chơi</p>
-              <p className="mt-2 text-4xl font-black">{hostState?.players.length ?? 0}</p>
-              <div className="mt-4 grid gap-2">
-                {hostState?.players.map((player) => (
-                  <div className={`rounded-2xl border-2 px-4 py-3 font-bold ${player.isOnline ? "border-lime-500 bg-lime-100" : "border-slate-200 bg-slate-100 text-slate-500"}`} key={player.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{player.name} {player.isWinner ? "• Winner" : ""}</span>
-                      <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.16em] ${player.isOnline ? "bg-lime-300 text-slate-950" : "bg-slate-300 text-slate-600"}`}>
-                        {player.isOnline ? "Online" : "Offline"}
-                      </span>
-                    </div>
-                    {!player.isOnline ? <p className="mt-1 text-xs font-semibold">Lần cuối: {formatLastSeen(player.lastSeenAt)}</p> : null}
-                  </div>
-                ))}
-              </div>
+          <section className="grid content-start gap-5 lg:order-3">
+            <div className="grid grid-cols-3 gap-2">
+              <StatCard compact label="Players" tone="cyan" value={hostState?.players.length ?? 0} />
+              <button className="block w-full text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-pixel-cyan" onClick={() => setShowPlayersPopup(true)} type="button">
+                <StatCard compact className="transition hover:brightness-110" label="Online" tone="green" value={onlinePlayers.length} />
+              </button>
+              <StatCard compact label="Claims" tone="gold" value={hostState?.claims.length ?? 0} />
             </div>
-            <div className="rounded-[2rem] border-4 border-slate-950 bg-white p-5 shadow-[10px_10px_0_#0f172a]">
-              <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">Bingo claims</p>
-              <div className="mt-4 grid gap-2">
-                {hostState?.claims.length ? hostState.claims.map((claim) => (
-                  <div className="rounded-2xl border-2 border-slate-950 bg-amber-100 px-4 py-3 font-black" key={claim.id}>
-                    {claim.player.name}: {claim.status}
+            {showPlayersPopup ? (
+              <div className="fixed inset-0 z-40 flex items-center justify-center bg-pixel-ink/70 p-4">
+                <PixelPanel className="max-h-[85vh] w-full max-w-lg overflow-auto p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="pixel-label text-slate-600">Player presence</p>
+                    <button className="pixel-badge bg-pixel-paper" onClick={() => setShowPlayersPopup(false)} type="button">Close</button>
                   </div>
-                )) : <p className="font-semibold text-slate-500">Chưa có ai báo Bingo.</p>}
+                  <div className="mt-4 grid gap-3">
+                    <p className="font-black text-slate-700">Online now ({onlinePlayers.length})</p>
+                    {onlinePlayers.length ? onlinePlayers.map((player) => (
+                      <div className="border-4 border-pixel-ink bg-green-100 p-3 shadow-[3px_3px_0_#10101f]" key={player.id}>
+                        <span className="font-black">{player.name}{player.isWinner ? " • Winner" : ""}</span>
+                      </div>
+                    )) : <p className="font-bold text-slate-600">No players are online.</p>}
+                  </div>
+                  <div className="mt-5 grid gap-3">
+                    <p className="font-black text-slate-700">Offline ({offlinePlayers.length})</p>
+                    {offlinePlayers.length ? offlinePlayers.map((player) => (
+                      <div className="border-4 border-pixel-ink bg-slate-100 p-3 text-slate-600 shadow-[3px_3px_0_#10101f]" key={player.id}>
+                        <div className="font-black">{player.name}{player.isWinner ? " • Winner" : ""}</div>
+                        <p className="mt-1 text-xs font-bold">Last seen: {formatLastSeen(player.lastSeenAt)}</p>
+                      </div>
+                    )) : <p className="font-bold text-slate-600">No offline players.</p>}
+                  </div>
+                </PixelPanel>
               </div>
-            </div>
+            ) : null}
+            <PixelPanel className="p-4 sm:p-5">
+              <p className="pixel-label text-slate-600">Winner</p>
+              <div className="mt-4 grid gap-3">
+                {winners.length ? winners.map((claim) => (
+                  <div className="border-4 border-pixel-ink bg-yellow-100 p-3 font-black shadow-[3px_3px_0_#10101f]" key={claim.id}>
+                    {claim.player.name}
+                  </div>
+                )) : <p className="font-bold text-slate-600">No winner yet.</p>}
+              </div>
+            </PixelPanel>
           </section>
         </div>
       </div>
-    </main>
+    </PageShell>
   );
 }
