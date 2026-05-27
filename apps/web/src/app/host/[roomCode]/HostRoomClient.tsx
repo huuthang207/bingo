@@ -1,7 +1,7 @@
 "use client";
 
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { CalledItemCard } from "@/components/CalledItemCard";
 import { AlertBox, PageShell, PixelButton, PixelPanel, StatCard, StatusBadge } from "@/components/PixelUi";
@@ -28,26 +28,6 @@ function formatLastSeen(lastSeenAt: string) {
   }).format(new Date(lastSeenAt));
 }
 
-function playCalledItemSound(audioContextRef: React.MutableRefObject<AudioContext | null>) {
-  const audioContext = audioContextRef.current ?? new AudioContext();
-  audioContextRef.current = audioContext;
-
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  const now = audioContext.currentTime;
-
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(880, now);
-  oscillator.frequency.exponentialRampToValueAtTime(660, now + 0.18);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-  oscillator.connect(gain);
-  gain.connect(audioContext.destination);
-  oscillator.start(now);
-  oscillator.stop(now + 0.24);
-}
-
 function statusTone(status?: string) {
   if (status === "playing") return "success";
   if (status === "ended") return "danger";
@@ -60,15 +40,13 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [animatedCalledOrder, setAnimatedCalledOrder] = useState<number | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [publicOrigin, setPublicOrigin] = useState("");
   const [showPlayersPopup, setShowPlayersPopup] = useState(false);
-  const soundEnabledRef = useRef(soundEnabled);
-  const audioContextRef = useRef<AudioContext | null>(null);
 
   const playerUrl = publicPlayerUrl(publicOrigin, roomCode);
   const latestItem = useMemo(() => hostState?.calledItems.at(-1), [hostState?.calledItems]);
+  const previousItem = useMemo(() => hostState?.calledItems.at(-2), [hostState?.calledItems]);
   const onlinePlayers = useMemo(() => hostState?.players.filter((player) => player.isOnline) ?? [], [hostState?.players]);
   const offlinePlayers = useMemo(() => hostState?.players.filter((player) => !player.isOnline) ?? [], [hostState?.players]);
   const winners = useMemo(() => hostState?.claims.filter((claim) => claim.status === "valid") ?? [], [hostState?.claims]);
@@ -76,10 +54,6 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
   useEffect(() => {
     setPublicOrigin(window.location.origin);
   }, []);
-
-  useEffect(() => {
-    soundEnabledRef.current = soundEnabled;
-  }, [soundEnabled]);
 
   useEffect(() => {
     apiFetch<HostState>(`/rooms/${roomCode}/host-state`, {
@@ -124,9 +98,6 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
         };
 
         setAnimatedCalledOrder(event.calledOrder);
-        if (soundEnabledRef.current) {
-          playCalledItemSound(audioContextRef);
-        }
 
         return { ...current, calledItems: [...current.calledItems, calledItem] };
       });
@@ -205,14 +176,6 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     socket?.emit(eventName, { roomCode, hostToken });
   }
 
-  function toggleSound() {
-    const nextEnabled = !soundEnabled;
-    setSoundEnabled(nextEnabled);
-    if (nextEnabled) {
-      playCalledItemSound(audioContextRef);
-    }
-  }
-
   if (!hostToken) {
     return (
       <PageShell className="flex items-center justify-center" narrow>
@@ -254,13 +217,10 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "playing"} onClick={() => emitHostEvent("call_next_item")}>
                   Call
                 </PixelButton>
-                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" onClick={toggleSound} variant={soundEnabled ? "secondary" : "ghost"}>
-                  Sound {soundEnabled ? "on" : "off"}
-                </PixelButton>
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status === "ended"} onClick={() => emitHostEvent("end_game")} variant="danger">
                   End
                 </PixelButton>
-                <PixelButton className="col-span-2 min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "ended"} onClick={() => emitHostEvent("restart_game")} variant="secondary">
+                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "ended"} onClick={() => emitHostEvent("restart_game")} variant="secondary">
                   Restart
                 </PixelButton>
               </div>
@@ -281,14 +241,12 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
           </section>
 
           <section className="space-y-5 lg:order-2">
-            <p className="pixel-label text-pixel-cyan">Latest item</p>
-            <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} order={latestItem?.calledOrder} />
+            <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} previousItem={previousItem?.item} />
             <PixelPanel className="p-4">
               <p className="pixel-label text-slate-600">Recently called</p>
               <div className="mt-4 flex max-h-72 flex-wrap gap-2 overflow-auto pr-1">
                 {hostState?.calledItems.length ? hostState.calledItems.map((called) => (
-                  <span className="pixel-chip max-w-full gap-1" key={called.id}>
-                    <span className="shrink-0 text-slate-500">#{called.calledOrder}</span>
+                  <span className="pixel-chip max-w-full" key={called.id}>
                     <span className="min-w-0 max-w-36 truncate sm:max-w-48">{called.item.label ?? (called.item.type === "image" ? "Image" : called.item.value)}</span>
                   </span>
                 )) : <p className="font-bold text-slate-600">No items have been called yet.</p>}

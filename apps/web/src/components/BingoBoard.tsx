@@ -14,24 +14,24 @@ function isMarked(markedCells: MarkedCell[], row: number, col: number) {
 
 function renderCell(cell: BoardCell) {
   if (cell.type === "free") {
-    return <span className="font-pixel text-sm font-black uppercase tracking-[0.12em] text-pixel-ink sm:text-lg">FREE</span>;
+    return <span className="font-pixel text-sm font-black uppercase tracking-[0.12em] text-pixel-ink sm:text-lg lg:text-base xl:text-lg">FREE</span>;
   }
 
   if (cell.type === "image") {
     return (
       <span className="flex h-full w-full items-center justify-center">
         <span className="block border-2 border-pixel-ink bg-white p-0.5 shadow-[2px_2px_0_#10101f]">
-          <img className="h-12 w-12 object-cover sm:h-16 sm:w-16" src={cell.value} alt={cell.label ?? "Bingo item"} />
+          <img className="h-12 w-12 object-cover sm:h-16 sm:w-16 lg:h-14 lg:w-14 xl:h-16 xl:w-16" src={cell.value} alt={cell.label ?? "Bingo item"} />
         </span>
       </span>
     );
   }
 
   if (cell.type === "number") {
-    return <span className="line-clamp-2 font-pixel text-xl font-black leading-none sm:text-4xl md:text-5xl">{cell.label ?? cell.value}</span>;
+    return <span className="line-clamp-2 font-pixel text-xl font-black leading-none sm:text-4xl md:text-5xl lg:text-4xl xl:text-5xl">{cell.label ?? cell.value}</span>;
   }
 
-  return <span className="line-clamp-4 text-xs font-black leading-tight sm:text-base md:text-lg">{cell.label ?? cell.value}</span>;
+  return <span className="line-clamp-4 text-xs font-black leading-tight sm:text-base md:text-lg lg:text-sm xl:text-base">{cell.label ?? cell.value}</span>;
 }
 
 export function BingoBoard({ board, markedCells, calledItemIds, onCellClick, disabled = false }: BingoBoardProps) {
@@ -49,7 +49,7 @@ export function BingoBoard({ board, markedCells, calledItemIds, onCellClick, dis
                 aria-disabled={!interactive}
                 data-sound="card"
                 aria-pressed={marked}
-                className={`relative flex aspect-square min-h-12 items-center justify-center overflow-hidden border-2 p-1 text-center transition duration-150 sm:min-h-20 sm:border-4 sm:p-2 ${
+                className={`relative flex aspect-square min-h-12 items-center justify-center overflow-hidden border-2 p-1 text-center transition duration-150 sm:min-h-20 sm:border-4 sm:p-2 lg:min-h-0 ${
                   marked
                     ? "border-pixel-ink bg-pixel-gold text-pixel-ink shadow-[inset_0_0_0_3px_rgba(16,16,31,0.18)]"
                     : "border-pixel-ink bg-pixel-paper text-pixel-ink"
