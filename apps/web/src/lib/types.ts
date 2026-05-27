@@ -11,6 +11,8 @@ export type JoinRoomResponse = {
   playerId: string;
   playerToken: string;
   board: BoardCell[][];
+  boardRegenerationCount: number;
+  boardRegenerationsRemaining: number;
 };
 
 export type CalledItem = {
@@ -28,6 +30,8 @@ export type PlayerState = {
   calledItems: CalledItem[];
   roomStatus: string;
   winRules: WinRules;
+  boardRegenerationCount: number;
+  boardRegenerationsRemaining: number;
 };
 
 export type HostPlayer = {
@@ -69,6 +73,14 @@ export type RoomStateEvent = {
   board?: BoardCell[][];
   markedCells?: MarkedCell[];
   calledItems?: CalledItem[];
+  onlinePlayerCount?: number;
+  boardRegenerationCount?: number;
+  boardRegenerationsRemaining?: number;
+};
+
+export type OnlinePlayerCountEvent = {
+  roomCode: string;
+  onlinePlayerCount: number;
 };
 
 export type ItemCalledEvent = {
@@ -94,4 +106,6 @@ export type BoardRegeneratedEvent = {
   roomCode: string;
   board: BoardCell[][];
   markedCells: MarkedCell[];
+  boardRegenerationCount: number;
+  boardRegenerationsRemaining: number;
 };

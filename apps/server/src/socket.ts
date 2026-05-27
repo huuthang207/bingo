@@ -5,12 +5,30 @@ import { generateBoard } from "./bingo/generateBoard.js";
 import { prisma } from "./db.js";
 import { addMarkedCell, canMarkCell, getCalledItemIds } from "./services/game.js";
 import { logger } from "./services/logger.js";
-import { addOnlinePlayer, removeOnlinePlayer } from "./services/onlinePlayers.js";
+import { addOnlinePlayer, countOnlinePlayers, removeOnlinePlayer } from "./services/onlinePlayers.js";
 import { getCalledItems, getPlayerForToken, getRoomForHost, getWinRules, parseBoard, parseMarkedCells, toBingoItem } from "./services/state.js";
 
 function emitError(socket: Parameters<Server["on"]>[1] extends (socket: infer S) => void ? S : never, code: string, message: string) {
   logger.warn("socket_error", { socketId: socket.id, code, message });
   socket.emit("error_message", { code, message });
+}
+
+async function getOnlinePlayerCount(roomId: string) {
+  const players = await prisma.player.findMany({ where: { roomId }, select: { id: true } });
+  return countOnlinePlayers(players.map((player) => player.id));
+}
+
+async function emitOnlinePlayerCount(io: Server, roomCode: string, roomId: string) {
+  io.to(`room:${roomCode}`).emit("online_player_count_updated", {
+    roomCode,
+    onlinePlayerCount: await getOnlinePlayerCount(roomId),
+  });
+}
+
+const maxBoardRegenerations = 3;
+
+function boardRegenerationsRemaining(boardRegenerationCount: number) {
+  return Math.max(0, maxBoardRegenerations - boardRegenerationCount);
 }
 
 export function registerSocketHandlers(io: Server) {
@@ -47,6 +65,7 @@ export function registerSocketHandlers(io: Server) {
             lastSeenAt: updatedPlayer.lastSeenAt.toISOString(),
           },
         });
+        await emitOnlinePlayerCount(io, roomCode, result.room.id);
       }
 
       socket.emit("room_state", {
@@ -55,6 +74,9 @@ export function registerSocketHandlers(io: Server) {
         board: parseBoard(result.player.boardData),
         markedCells: parseMarkedCells(result.player.markedCells),
         calledItems: await getCalledItems(result.room.id),
+        onlinePlayerCount: await getOnlinePlayerCount(result.room.id),
+        boardRegenerationCount: result.player.boardRegenerationCount,
+        boardRegenerationsRemaining: boardRegenerationsRemaining(result.player.boardRegenerationCount),
       });
     });
 
@@ -320,14 +342,26 @@ export function registerSocketHandlers(io: Server) {
       const items: BingoItem[] = roomItems.map(toBingoItem);
       const board = generateBoard(items, result.room.boardSize, result.room.hasFreeCell);
       const markedCells: MarkedCell[] = [];
-
-      await prisma.player.update({
-        where: { id: result.player.id },
-        data: { boardData: board, markedCells, lastSeenAt: new Date() },
+      const updatedPlayers = await prisma.player.updateMany({
+        where: { id: result.player.id, boardRegenerationCount: { lt: maxBoardRegenerations } },
+        data: { boardData: board, markedCells, boardRegenerationCount: { increment: 1 }, lastSeenAt: new Date() },
       });
 
+      if (updatedPlayers.count === 0) {
+        emitError(socket, "BOARD_REGENERATION_LIMIT_REACHED", "You've reached the 3-card regeneration limit.");
+        return;
+      }
+
+      const updatedPlayer = await prisma.player.findUniqueOrThrow({ where: { id: result.player.id }, select: { boardRegenerationCount: true } });
+
       logger.info("socket_regenerate_board", { socketId: socket.id, roomCode, playerId: result.player.id });
-      socket.emit("board_regenerated", { roomCode, board, markedCells });
+      socket.emit("board_regenerated", {
+        roomCode,
+        board,
+        markedCells,
+        boardRegenerationCount: updatedPlayer.boardRegenerationCount,
+        boardRegenerationsRemaining: boardRegenerationsRemaining(updatedPlayer.boardRegenerationCount),
+      });
     });
 
     socket.on("end_game", async ({ roomCode, hostToken }: { roomCode: string; hostToken?: string }) => {
@@ -359,10 +393,16 @@ export function registerSocketHandlers(io: Server) {
       logger.info("socket_player_disconnect", { socketId: socket.id, roomCode: connectedPlayer.roomCode, playerId: connectedPlayer.id });
 
       if (removeOnlinePlayer(connectedPlayer.id, socket.id)) {
+        const room = await prisma.room.findUnique({ where: { roomCode: connectedPlayer.roomCode }, select: { id: true } });
+
         io.to(`host:${connectedPlayer.roomCode}`).emit("player_left", {
           playerId: connectedPlayer.id,
           lastSeenAt: lastSeenAt.toISOString(),
         });
+
+        if (room) {
+          await emitOnlinePlayerCount(io, connectedPlayer.roomCode, room.id);
+        }
       }
 
       connectedPlayer = null;

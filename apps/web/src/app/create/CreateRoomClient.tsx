@@ -174,6 +174,7 @@ export function CreateRoomClient() {
   const [vertical, setVertical] = useState(true);
   const [diagonal, setDiagonal] = useState(true);
   const [result, setResult] = useState<CreateRoomResponse | null>(null);
+  const [inviteCopyStatus, setInviteCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [estimatedPlayers, setEstimatedPlayers] = useState(50);
   const [winnerEstimate, setWinnerEstimate] = useState<WinnerEstimate | null>(null);
   const [winnerEstimatePlayerCount, setWinnerEstimatePlayerCount] = useState(estimatedPlayers);
@@ -281,6 +282,7 @@ export function CreateRoomClient() {
 
   async function createRoom() {
     setError(null);
+    setInviteCopyStatus("idle");
     setIsSubmitting(true);
 
     try {
@@ -300,6 +302,21 @@ export function CreateRoomClient() {
       setError(caught instanceof Error ? caught.message : "Could not create the room.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!result) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(new URL(result.playerUrl, window.location.origin).toString());
+      setInviteCopyStatus("copied");
+      window.setTimeout(() => setInviteCopyStatus("idle"), 1800);
+    } catch {
+      setInviteCopyStatus("failed");
+      window.setTimeout(() => setInviteCopyStatus("idle"), 1800);
     }
   }
 
@@ -453,8 +470,10 @@ export function CreateRoomClient() {
                 <p className="pixel-label text-pixel-ink/70">Room is ready</p>
                 <p className="mt-2 font-pixel text-4xl font-black text-pixel-ink">{result.roomCode}</p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <a className="pixel-button pixel-button-primary" href={result.hostUrl}>Open host</a>
-                  <a className="pixel-button pixel-button-secondary" href={result.playerUrl}>Open player</a>
+                  <a className="pixel-button pixel-button-primary" href={result.hostUrl} rel="noreferrer" target="_blank">Open host</a>
+                  <PixelButton className="w-full" onClick={copyInviteLink} variant="secondary">
+                    {inviteCopyStatus === "copied" ? "Copied" : inviteCopyStatus === "failed" ? "Copy failed" : "Copy invite link"}
+                  </PixelButton>
                 </div>
               </div>
             ) : null}

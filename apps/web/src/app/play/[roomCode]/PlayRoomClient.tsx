@@ -9,7 +9,7 @@ import { AlertBox, PageShell, PixelButton, PixelPanel, StatusBadge } from "@/com
 import { apiFetch } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
 import { playSound } from "@/lib/sounds";
-import type { BingoVerifiedEvent, BoardRegeneratedEvent, CalledItem, ItemCalledEvent, JoinRoomResponse, PlayerState, RoomStateEvent } from "@/lib/types";
+import type { BingoVerifiedEvent, BoardRegeneratedEvent, CalledItem, ItemCalledEvent, JoinRoomResponse, OnlinePlayerCountEvent, PlayerState, RoomStateEvent } from "@/lib/types";
 
 type PlayRoomClientProps = {
   roomCode: string;
@@ -37,6 +37,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   const [animatedCalledOrder, setAnimatedCalledOrder] = useState<number | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [onlinePlayerCount, setOnlinePlayerCount] = useState<number | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isLoadingState, setIsLoadingState] = useState(true);
 
@@ -46,6 +47,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   const latestItem = useMemo(() => state?.calledItems.at(-1), [state?.calledItems]);
   const previousItem = useMemo(() => state?.calledItems.at(-2), [state?.calledItems]);
   const calledItemIds = useMemo(() => new Set(state?.calledItems.map((called) => called.item.id) ?? []), [state?.calledItems]);
+  const boardRegenerationsRemaining = state?.boardRegenerationsRemaining ?? localBoard?.boardRegenerationsRemaining ?? 0;
 
   useEffect(() => {
     if (!playerToken) {
@@ -67,11 +69,17 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
         markedCells: event.markedCells ?? current.markedCells,
         calledItems: event.calledItems ?? current.calledItems,
         roomStatus: event.status,
+        boardRegenerationCount: event.boardRegenerationCount ?? current.boardRegenerationCount,
+        boardRegenerationsRemaining: event.boardRegenerationsRemaining ?? current.boardRegenerationsRemaining,
       } : current);
       if (event.markedCells) {
         setMarkedCells(event.markedCells);
       }
+      if (typeof event.onlinePlayerCount === "number") {
+        setOnlinePlayerCount(event.onlinePlayerCount);
+      }
     });
+    nextSocket.on("online_player_count_updated", (event: OnlinePlayerCountEvent) => setOnlinePlayerCount(event.onlinePlayerCount));
     nextSocket.on("game_started", () => setState((current) => (current ? { ...current, roomStatus: "playing" } : current)));
     nextSocket.on("game_ended", () => setState((current) => (current ? { ...current, roomStatus: "ended" } : current)));
     nextSocket.on("game_restarted", () => {
@@ -99,10 +107,20 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
     });
     nextSocket.on("board_regenerated", (event: BoardRegeneratedEvent) => {
       setError(null);
-      setSuccessMessage("New Bingo card generated.");
       setMarkedCells(event.markedCells);
-      setLocalBoard((current) => current ? { ...current, board: event.board } : current);
-      setState((current) => current ? { ...current, board: event.board, markedCells: event.markedCells } : current);
+      setLocalBoard((current) => current ? {
+        ...current,
+        board: event.board,
+        boardRegenerationCount: event.boardRegenerationCount,
+        boardRegenerationsRemaining: event.boardRegenerationsRemaining,
+      } : current);
+      setState((current) => current ? {
+        ...current,
+        board: event.board,
+        markedCells: event.markedCells,
+        boardRegenerationCount: event.boardRegenerationCount,
+        boardRegenerationsRemaining: event.boardRegenerationsRemaining,
+      } : current);
     });
     nextSocket.on("bingo_verified", (event: BingoVerifiedEvent) => {
       playSound("winner", 0.75);
@@ -162,6 +180,8 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
         calledItems: [],
         roomStatus: "waiting",
         winRules: { horizontal: true, vertical: true, diagonal: true },
+        boardRegenerationCount: joined.boardRegenerationCount,
+        boardRegenerationsRemaining: joined.boardRegenerationsRemaining,
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not join the room.");
@@ -229,7 +249,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
               </div>
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
                 <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={roomStatusTone(roomStatus)}>{roomStatus === "playing" ? "Playing" : roomStatus === "ended" ? "Ended" : "Waiting"}</StatusBadge>
-                <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={isConnected ? "success" : "danger"}>{isConnected ? "Online" : "Offline"}</StatusBadge>
+                <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={isConnected ? "success" : "danger"}>{onlinePlayerCount ?? "--"} online</StatusBadge>
               </div>
             </div>
           </PixelPanel>
@@ -242,9 +262,12 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
           {successMessage ? <AlertBox tone="success">{successMessage}</AlertBox> : null}
 
           {roomStatus === "waiting" ? (
-            <PixelButton className="w-full text-base" disabled={!isConnected} onClick={regenerateBoard} variant="secondary">
-              Generate new card
-            </PixelButton>
+            <div className="grid gap-2">
+              <PixelButton className="w-full text-base" disabled={!isConnected || boardRegenerationsRemaining <= 0} onClick={regenerateBoard} variant="secondary">
+                {boardRegenerationsRemaining > 0 ? "Generate new card" : "No regenerations left"}
+              </PixelButton>
+              <p className="text-center text-xs font-black text-slate-600">{boardRegenerationsRemaining > 0 ? `${boardRegenerationsRemaining} regenerations left` : "No regenerations left"}</p>
+            </div>
           ) : null}
 
           <details className="pixel-panel p-3 sm:p-4">

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useState } from "react";
 import type { Socket } from "socket.io-client";
@@ -171,7 +172,7 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     }
   }
 
-  function emitHostEvent(eventName: "start_game" | "call_next_item" | "end_game" | "restart_game") {
+  function emitHostEvent(eventName: "start_game" | "call_next_item" | "end_game") {
     setError(null);
     socket?.emit(eventName, { roomCode, hostToken });
   }
@@ -220,9 +221,9 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status === "ended"} onClick={() => emitHostEvent("end_game")} variant="danger">
                   End
                 </PixelButton>
-                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "ended"} onClick={() => emitHostEvent("restart_game")} variant="secondary">
-                  Restart
-                </PixelButton>
+                <Link className="pixel-button pixel-button-secondary min-h-10 w-full px-2 py-2 text-xs sm:text-sm" href="/create">
+                  New game
+                </Link>
               </div>
             </PixelPanel>
 

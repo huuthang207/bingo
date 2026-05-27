@@ -28,3 +28,7 @@ export function removeOnlinePlayer(playerId: string, socketId: string) {
 export function isPlayerOnline(playerId: string) {
   return playerSocketIds.has(playerId);
 }
+
+export function countOnlinePlayers(playerIds: string[]) {
+  return playerIds.filter((playerId) => playerSocketIds.has(playerId)).length;
+}

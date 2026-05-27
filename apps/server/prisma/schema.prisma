@@ -51,6 +51,7 @@ model Player {
   playerTokenHash String       @map("player_token_hash")
   boardData       Json         @map("board_data")
   markedCells     Json         @default("[]") @map("marked_cells")
+  boardRegenerationCount Int   @default(0) @map("board_regeneration_count")
   isWinner        Boolean      @default(false) @map("is_winner")
   joinedAt        DateTime     @default(now()) @map("joined_at")
   lastSeenAt      DateTime     @default(now()) @map("last_seen_at")

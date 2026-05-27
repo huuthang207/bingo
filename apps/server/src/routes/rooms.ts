@@ -12,6 +12,11 @@ export const roomsRouter = Router();
 
 const createRoomRateLimit = rateLimit({ keyPrefix: "create-room", windowMs: 60_000, maxRequests: 10 });
 const joinRoomRateLimit = rateLimit({ keyPrefix: "join-room", windowMs: 60_000, maxRequests: 30 });
+const maxBoardRegenerations = 3;
+
+function boardRegenerationsRemaining(boardRegenerationCount: number) {
+  return Math.max(0, maxBoardRegenerations - boardRegenerationCount);
+}
 
 const createRoomHandler: RequestHandler = async (request, response, next) => {
   try {
@@ -168,6 +173,8 @@ roomsRouter.get("/:roomCode/player-state", async (request, response, next) => {
       calledItems,
       roomStatus: result.room.status,
       winRules: getWinRules(result.room),
+      boardRegenerationCount: result.player.boardRegenerationCount,
+      boardRegenerationsRemaining: boardRegenerationsRemaining(result.player.boardRegenerationCount),
     });
   } catch (error) {
     next(error);
@@ -187,8 +194,8 @@ const joinRoomHandler: RequestHandler<{ roomCode: string }> = async (request, re
       return;
     }
 
-    if (room.status === "ended") {
-      response.status(400).json({ message: "Phòng đã kết thúc." });
+    if (room.status !== "waiting") {
+      response.status(400).json({ message: room.status === "ended" ? "Phòng đã kết thúc." : "This game has already started. New players can't join now." });
       return;
     }
 
@@ -214,6 +221,8 @@ const joinRoomHandler: RequestHandler<{ roomCode: string }> = async (request, re
       playerId: player.id,
       playerToken,
       board,
+      boardRegenerationCount: player.boardRegenerationCount,
+      boardRegenerationsRemaining: boardRegenerationsRemaining(player.boardRegenerationCount),
     });
   } catch (error) {
     next(error);
