@@ -20,7 +20,7 @@ function publicPlayerUrl(origin: string, roomCode: string) {
 }
 
 function formatLastSeen(lastSeenAt: string) {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat("vi-VN", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -61,7 +61,7 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
       headers: { Authorization: `Bearer ${hostToken}` },
     })
       .then(setHostState)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Could not load the host room."));
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Không thể tải phòng người dẫn."));
   }, [hostToken, roomCode]);
 
   useEffect(() => {
@@ -181,8 +181,8 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     return (
       <PageShell className="flex items-center justify-center" narrow>
         <AlertBox tone="danger">
-          <p className="text-2xl font-black">Missing host token</p>
-          <p className="mt-2">Open the exact host link generated after creating the room.</p>
+          <p className="text-2xl font-black">Thiếu token người dẫn</p>
+          <p className="mt-2">Hãy mở đúng link người dẫn được tạo sau khi tạo phòng.</p>
         </AlertBox>
       </PageShell>
     );
@@ -194,13 +194,13 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
         <PixelPanel dark className="p-4 sm:p-6">
           <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <p className="pixel-label text-pixel-cyan">Host dashboard</p>
-              <h1 className="mt-2 text-3xl font-black leading-tight text-pixel-cream sm:text-5xl">{hostState?.title ?? `Room ${roomCode}`}</h1>
+              <p className="pixel-label text-pixel-cyan">Bảng điều khiển người dẫn</p>
+              <h1 className="mt-2 text-3xl font-black leading-tight text-pixel-cream sm:text-5xl">{hostState?.title ?? `Phòng ${roomCode}`}</h1>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <StatusBadge tone="warning">Code {roomCode}</StatusBadge>
+              <StatusBadge tone="warning">Mã {roomCode}</StatusBadge>
               <StatusBadge tone={isConnected ? "success" : "danger"}>{isConnected ? "Online" : "Offline"}</StatusBadge>
-              <StatusBadge tone={statusTone(hostState?.status)}>{hostState?.status ?? "loading"}</StatusBadge>
+              <StatusBadge tone={statusTone(hostState?.status)}>{hostState?.status === "playing" ? "đang chơi" : hostState?.status === "ended" ? "đã kết thúc" : hostState?.status === "waiting" ? "đang chờ" : "đang tải"}</StatusBadge>
             </div>
           </div>
         </PixelPanel>
@@ -210,32 +210,32 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
         <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr_0.9fr]">
           <section className="space-y-5 lg:order-1">
             <PixelPanel className="p-3 sm:p-4">
-              <p className="pixel-label text-slate-600">Controls</p>
+              <p className="pixel-label text-slate-600">Điều khiển</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "waiting"} onClick={() => emitHostEvent("start_game")} variant="success">
-                  Start
+                  Bắt đầu
                 </PixelButton>
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "playing"} onClick={() => emitHostEvent("call_next_item")}>
-                  Call
+                  Gọi mục
                 </PixelButton>
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status === "ended"} onClick={() => emitHostEvent("end_game")} variant="danger">
-                  End
+                  Kết thúc
                 </PixelButton>
                 <Link className="pixel-button pixel-button-secondary min-h-10 w-full px-2 py-2 text-xs sm:text-sm" href="/create">
-                  New game
+                  Ván mới
                 </Link>
               </div>
             </PixelPanel>
 
             <PixelPanel className="p-4 sm:p-5">
-              <p className="pixel-label text-slate-600">Invite</p>
+              <p className="pixel-label text-slate-600">Mời người chơi</p>
               <div className="mt-4 grid gap-4">
-                <div className="mx-auto border-4 border-pixel-ink bg-white p-3 shadow-[4px_4px_0_#10101f]">
+                <div aria-describedby="host-player-url" aria-label="Mã QR để tham gia phòng" className="mx-auto border-4 border-pixel-ink bg-white p-3 shadow-[4px_4px_0_#10101f]" role="img">
                   <QRCodeSVG bgColor="#ffffff" fgColor="#10101f" level="M" size={132} value={playerUrl} />
                 </div>
-                <p className="break-all text-sm font-black text-slate-700">{playerUrl}</p>
+                <p className="break-all text-sm font-black text-slate-700" id="host-player-url">{playerUrl}</p>
                 <PixelButton className="w-full" onClick={copyInviteLink} variant="secondary">
-                  {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy link"}
+                  {copyStatus === "copied" ? "Đã sao chép" : copyStatus === "failed" ? "Sao chép thất bại" : "Sao chép link"}
                 </PixelButton>
               </div>
             </PixelPanel>
@@ -244,60 +244,60 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
           <section className="space-y-5 lg:order-2">
             <CalledItemCard animate={latestItem?.calledOrder === animatedCalledOrder} item={latestItem?.item} key={latestItem?.calledOrder ?? "empty"} previousItem={previousItem?.item} />
             <PixelPanel className="p-4">
-              <p className="pixel-label text-slate-600">Recently called</p>
+              <p className="pixel-label text-slate-600">Đã gọi gần đây</p>
               <div className="mt-4 flex max-h-72 flex-wrap gap-2 overflow-auto pr-1">
                 {hostState?.calledItems.length ? hostState.calledItems.map((called) => (
                   <span className="pixel-chip max-w-full" key={called.id}>
-                    <span className="min-w-0 max-w-36 truncate sm:max-w-48">{called.item.label ?? (called.item.type === "image" ? "Image" : called.item.value)}</span>
+                    <span className="min-w-0 max-w-36 truncate sm:max-w-48">{called.item.label ?? (called.item.type === "image" ? "Ảnh" : called.item.value)}</span>
                   </span>
-                )) : <p className="font-bold text-slate-600">No items have been called yet.</p>}
+                )) : <p className="font-bold text-slate-600">Chưa có mục nào được gọi.</p>}
               </div>
             </PixelPanel>
           </section>
 
           <section className="grid content-start gap-5 lg:order-3">
             <div className="grid grid-cols-3 gap-2">
-              <StatCard compact label="Players" tone="cyan" value={hostState?.players.length ?? 0} />
+              <StatCard compact label="Người chơi" tone="cyan" value={hostState?.players.length ?? 0} />
               <button className="block w-full text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-pixel-cyan" onClick={() => setShowPlayersPopup(true)} type="button">
-                <StatCard compact className="transition hover:brightness-110" label="Online" tone="green" value={onlinePlayers.length} />
+                <StatCard compact className="transition hover:brightness-110" label="Trực tuyến" tone="green" value={onlinePlayers.length} />
               </button>
-              <StatCard compact label="Claims" tone="gold" value={hostState?.claims.length ?? 0} />
+              <StatCard compact label="Yêu cầu" tone="gold" value={hostState?.claims.length ?? 0} />
             </div>
             {showPlayersPopup ? (
-              <div className="fixed inset-0 z-40 flex items-center justify-center bg-pixel-ink/70 p-4">
+              <div className="fixed inset-0 z-40 flex items-center justify-center bg-pixel-ink/70 p-4" aria-modal="true" aria-labelledby="host-players-popup-title" role="dialog">
                 <PixelPanel className="max-h-[85vh] w-full max-w-lg overflow-auto p-4 sm:p-5">
                   <div className="flex items-center justify-between gap-4">
-                    <p className="pixel-label text-slate-600">Player presence</p>
-                    <button className="pixel-badge bg-pixel-paper" onClick={() => setShowPlayersPopup(false)} type="button">Close</button>
+                    <p className="pixel-label text-slate-600" id="host-players-popup-title">Trạng thái người chơi</p>
+                    <button className="pixel-badge bg-pixel-paper" onClick={() => setShowPlayersPopup(false)} type="button">Đóng</button>
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <p className="font-black text-slate-700">Online now ({onlinePlayers.length})</p>
+                    <p className="font-black text-slate-700">Đang trực tuyến ({onlinePlayers.length})</p>
                     {onlinePlayers.length ? onlinePlayers.map((player) => (
                       <div className="border-4 border-pixel-ink bg-green-100 p-3 shadow-[3px_3px_0_#10101f]" key={player.id}>
-                        <span className="font-black">{player.name}{player.isWinner ? " • Winner" : ""}</span>
+                        <span className="font-black">{player.name}{player.isWinner ? " • Thắng" : ""}</span>
                       </div>
-                    )) : <p className="font-bold text-slate-600">No players are online.</p>}
+                    )) : <p className="font-bold text-slate-600">Chưa có người chơi trực tuyến.</p>}
                   </div>
                   <div className="mt-5 grid gap-3">
-                    <p className="font-black text-slate-700">Offline ({offlinePlayers.length})</p>
+                    <p className="font-black text-slate-700">Không trực tuyến ({offlinePlayers.length})</p>
                     {offlinePlayers.length ? offlinePlayers.map((player) => (
                       <div className="border-4 border-pixel-ink bg-slate-100 p-3 text-slate-600 shadow-[3px_3px_0_#10101f]" key={player.id}>
-                        <div className="font-black">{player.name}{player.isWinner ? " • Winner" : ""}</div>
-                        <p className="mt-1 text-xs font-bold">Last seen: {formatLastSeen(player.lastSeenAt)}</p>
+                        <div className="font-black">{player.name}{player.isWinner ? " • Thắng" : ""}</div>
+                        <p className="mt-1 text-xs font-bold">Lần cuối trực tuyến: {formatLastSeen(player.lastSeenAt)}</p>
                       </div>
-                    )) : <p className="font-bold text-slate-600">No offline players.</p>}
+                    )) : <p className="font-bold text-slate-600">Không có người chơi ngoại tuyến.</p>}
                   </div>
                 </PixelPanel>
               </div>
             ) : null}
             <PixelPanel className="p-4 sm:p-5">
-              <p className="pixel-label text-slate-600">Winner</p>
+              <p className="pixel-label text-slate-600">Người thắng</p>
               <div className="mt-4 grid gap-3">
                 {winners.length ? winners.map((claim) => (
                   <div className="border-4 border-pixel-ink bg-yellow-100 p-3 font-black shadow-[3px_3px_0_#10101f]" key={claim.id}>
                     {claim.player.name}
                   </div>
-                )) : <p className="font-bold text-slate-600">No winner yet.</p>}
+                )) : <p className="font-bold text-slate-600">Chưa có người thắng.</p>}
               </div>
             </PixelPanel>
           </section>

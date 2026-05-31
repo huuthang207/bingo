@@ -10,8 +10,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Request failed" }));
-    throw new Error(error.message ?? "Request failed");
+    const error = await response.json().catch(() => ({ message: "Yêu cầu thất bại" }));
+    throw new Error(error.message ?? "Yêu cầu thất bại");
   }
 
   return response.json() as Promise<T>;

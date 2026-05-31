@@ -10,7 +10,7 @@ type CalledItemCardProps = {
 
 function itemDisplayValue(item?: Exclude<BoardCell, { type: "free" }>) {
   if (!item) return "--";
-  if (item.type === "image") return "Image";
+  if (item.type === "image") return "Ảnh";
   return item.label ?? item.value;
 }
 
@@ -34,15 +34,15 @@ function calledItemTitleSize(itemType: "number" | "text" | "image", compact: boo
   return compact ? "text-3xl sm:text-4xl" : "text-4xl sm:text-6xl";
 }
 
-export function CalledItemCard({ item, previousItem, emptyText = "No items called yet", compact = false, animate = false }: CalledItemCardProps) {
+export function CalledItemCard({ item, previousItem, emptyText = "Chưa có mục nào được gọi", compact = false, animate = false }: CalledItemCardProps) {
   const animationClass = animate ? "called-item-enter" : "";
 
   if (!item) {
     return (
       <div className="pixel-panel grid gap-2 p-4 sm:p-5">
         <div className="grid grid-cols-[6rem_1fr] gap-3 sm:grid-cols-[7.25rem_1fr]">
-          <p className="pixel-label text-pixel-pink">Last Call</p>
-          <p className="pixel-label text-pixel-pink">Current Call</p>
+          <p className="pixel-label text-pixel-pink">Lượt trước</p>
+          <p className="pixel-label text-pixel-pink">Lượt hiện tại</p>
         </div>
         <div className="grid grid-cols-[6rem_1fr] items-stretch gap-3 sm:grid-cols-[7.25rem_1fr]">
           <PreviousCall item={previousItem} />
@@ -59,14 +59,14 @@ export function CalledItemCard({ item, previousItem, emptyText = "No items calle
     return (
       <div className={`pixel-panel grid gap-2 p-4 ${animationClass} sm:p-5`}>
         <div className="grid grid-cols-[6rem_1fr] gap-3 sm:grid-cols-[7.25rem_1fr]">
-          <p className="pixel-label text-pixel-pink">Last Call</p>
-          <p className="pixel-label text-pixel-pink">Current Call</p>
+          <p className="pixel-label text-pixel-pink">Lượt trước</p>
+          <p className="pixel-label text-pixel-pink">Lượt hiện tại</p>
         </div>
         <div className="grid grid-cols-[6rem_1fr] items-stretch gap-3 sm:grid-cols-[7.25rem_1fr]">
           <PreviousCall item={previousItem} />
           <div className="min-w-0">
             <div className="border-4 border-pixel-ink bg-white p-2 shadow-[4px_4px_0_#10101f]">
-              <img className={`${compact ? "h-24 sm:h-32" : "h-44 sm:h-52"} w-full object-cover`} src={item.value} alt={item.label ?? "Bingo image item"} />
+              <img className={`${compact ? "h-24 sm:h-32" : "h-44 sm:h-52"} w-full object-cover`} src={item.value} alt={item.label ?? "Ảnh Bingo"} />
             </div>
           </div>
         </div>
@@ -77,8 +77,8 @@ export function CalledItemCard({ item, previousItem, emptyText = "No items calle
   return (
     <div className={`pixel-panel grid gap-2 p-4 ${animationClass} sm:p-5`}>
       <div className="grid grid-cols-[6rem_1fr] gap-3 sm:grid-cols-[7.25rem_1fr]">
-        <p className="pixel-label text-pixel-pink">Last Call</p>
-        <p className="pixel-label text-pixel-pink">Current Call</p>
+        <p className="pixel-label text-pixel-pink">Lượt trước</p>
+        <p className="pixel-label text-pixel-pink">Lượt hiện tại</p>
       </div>
       <div className="grid grid-cols-[6rem_1fr] items-stretch gap-3 sm:grid-cols-[7.25rem_1fr]">
         <PreviousCall item={previousItem} />
