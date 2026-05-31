@@ -125,7 +125,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
     nextSocket.on("bingo_verified", (event: BingoVerifiedEvent) => {
       playSound("winner", 0.75);
       setWinnerName(event.playerName);
-      setSuccessMessage(`${event.playerName} won Bingo. The game has ended.`);
+      setSuccessMessage(`${event.playerName} đã thắng Bingo. Ván chơi đã kết thúc.`);
     });
     nextSocket.on("error_message", ({ message }: { message: string }) => setError(message));
     nextSocket.connect();
@@ -184,7 +184,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
         boardRegenerationsRemaining: joined.boardRegenerationsRemaining,
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not join the room.");
+      setError(caught instanceof Error ? caught.message : "Không thể tham gia phòng.");
     } finally {
       setIsJoining(false);
     }
@@ -214,7 +214,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
   if (isLoadingState) {
     return (
       <PageShell className="flex items-center justify-center">
-        <StatusBadge tone="info">Restoring room...</StatusBadge>
+        <StatusBadge tone="info">Đang khôi phục phòng...</StatusBadge>
       </PageShell>
     );
   }
@@ -223,14 +223,14 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
     return (
       <PageShell className="flex items-center justify-center py-10" narrow>
         <PixelPanel dark className="w-full p-5 sm:p-8">
-          <StatusBadge tone="info">Room {roomCode}</StatusBadge>
-          <h1 className="pixel-title mt-5 text-4xl leading-tight sm:text-6xl">Claim Your Bingo Board</h1>
-          <p className="mt-5 font-bold leading-7 text-pixel-muted">Enter your name to receive a unique board. No account needed, just the room link.</p>
-          <label className="pixel-label mt-8 block text-pixel-muted" htmlFor="player-name">Player name</label>
-          <input className="pixel-input mt-3" id="player-name" maxLength={40} onChange={(event) => setName(event.target.value)} placeholder="Example: Alex" value={name} />
+          <StatusBadge tone="info">Phòng {roomCode}</StatusBadge>
+          <h1 className="pixel-title mt-5 text-4xl leading-tight sm:text-6xl">Nhận bảng Bingo của bạn</h1>
+          <p className="mt-5 font-bold leading-7 text-pixel-muted">Nhập tên để nhận một bảng Bingo riêng. Không cần tài khoản, chỉ cần link phòng.</p>
+          <label className="pixel-label mt-8 block text-pixel-muted" htmlFor="player-name">Tên người chơi</label>
+          <input className="pixel-input mt-3" id="player-name" maxLength={40} onChange={(event) => setName(event.target.value)} placeholder="Ví dụ: An" value={name} />
           {error ? <AlertBox className="mt-5" tone="danger">{error}</AlertBox> : null}
           <PixelButton className="mt-6 w-full text-base" disabled={name.trim().length === 0 || isJoining} onClick={joinRoom} variant="secondary">
-            {isJoining ? "Joining room" : "Join now"}
+            {isJoining ? "Đang vào phòng" : "Tham gia ngay"}
           </PixelButton>
         </PixelPanel>
       </PageShell>
@@ -244,11 +244,11 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
           <PixelPanel dark className="p-3 sm:p-4">
             <div className="grid gap-3">
               <div className="min-w-0">
-                <p className="pixel-label text-pixel-cyan">Room {roomCode}</p>
-                <h1 className="mt-1 truncate text-xl font-black text-pixel-cream sm:text-2xl">{playerName || "Player"}</h1>
+                <p className="pixel-label text-pixel-cyan">Phòng {roomCode}</p>
+                <h1 className="mt-1 truncate text-xl font-black text-pixel-cream sm:text-2xl">{playerName || "Người chơi"}</h1>
               </div>
               <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
-                <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={roomStatusTone(roomStatus)}>{roomStatus === "playing" ? "Playing" : roomStatus === "ended" ? "Ended" : "Waiting"}</StatusBadge>
+                <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={roomStatusTone(roomStatus)}>{roomStatus === "playing" ? "Đang chơi" : roomStatus === "ended" ? "Đã kết thúc" : "Đang chờ"}</StatusBadge>
                 <StatusBadge className="justify-center px-2 text-[0.7rem] sm:text-xs" tone={isConnected ? "success" : "danger"}>{onlinePlayerCount ?? "--"} online</StatusBadge>
               </div>
             </div>
@@ -264,14 +264,14 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
           {roomStatus === "waiting" ? (
             <div className="grid gap-2">
               <PixelButton className="w-full text-base" disabled={!isConnected || boardRegenerationsRemaining <= 0} onClick={regenerateBoard} variant="secondary">
-                {boardRegenerationsRemaining > 0 ? "Generate new card" : "No regenerations left"}
+                {boardRegenerationsRemaining > 0 ? "Tạo bảng mới" : "Hết lượt đổi bảng"}
               </PixelButton>
-              <p className="text-center text-xs font-black text-slate-600">{boardRegenerationsRemaining > 0 ? `${boardRegenerationsRemaining} regenerations left` : "No regenerations left"}</p>
+              <p className="text-center text-xs font-black text-slate-600">{boardRegenerationsRemaining > 0 ? `Còn ${boardRegenerationsRemaining} lượt đổi bảng` : "Hết lượt đổi bảng"}</p>
             </div>
           ) : null}
 
           <details className="pixel-panel p-3 sm:p-4">
-            <summary className="pixel-label cursor-pointer text-slate-600">Called items ({state?.calledItems.length ?? 0})</summary>
+            <summary className="pixel-label cursor-pointer text-slate-600">Mục đã gọi ({state?.calledItems.length ?? 0})</summary>
             <div className="mt-3 flex max-h-32 flex-wrap gap-2 overflow-auto pr-1 sm:max-h-40 lg:max-h-52">
               {state?.calledItems.length ? (
                 state.calledItems.map((called) => (
@@ -280,7 +280,7 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
                   </span>
                 ))
               ) : (
-                <p className="font-bold text-slate-600">Called items will appear here once the host starts calling.</p>
+                <p className="font-bold text-slate-600">Các mục đã gọi sẽ xuất hiện ở đây khi người dẫn bắt đầu gọi.</p>
               )}
             </div>
           </details>
@@ -304,11 +304,11 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
       {winnerName ? (
         <div className="winner-overlay-enter fixed inset-0 z-40 flex items-center justify-center bg-pixel-ink/75 p-4">
           <PixelPanel className="winner-panel-enter w-full max-w-md p-5 text-center sm:p-7">
-            <p className="pixel-label text-pixel-pink">Bingo winner</p>
+            <p className="pixel-label text-pixel-pink">Người thắng Bingo</p>
             <p className="mt-4 font-pixel text-4xl font-black uppercase leading-tight text-pixel-ink sm:text-5xl">{winnerName}</p>
-            <p className="mt-4 font-bold text-slate-700">The game has ended.</p>
+            <p className="mt-4 font-bold text-slate-700">Ván chơi đã kết thúc.</p>
             <PixelButton className="mt-6 w-full" onClick={closeWinnerPopup} variant="secondary">
-              Close
+              Đóng
             </PixelButton>
           </PixelPanel>
         </div>

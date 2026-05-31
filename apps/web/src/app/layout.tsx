@@ -3,13 +3,13 @@ import { GlobalClickSound } from "@/components/GlobalClickSound";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Bingo Realtime",
-  description: "A realtime Bingo website for large groups.",
+  title: "Bingo Thời Gian Thực",
+  description: "Trang Bingo thời gian thực cho nhóm đông người.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="vi">
       <body>
         <GlobalClickSound />
         {children}

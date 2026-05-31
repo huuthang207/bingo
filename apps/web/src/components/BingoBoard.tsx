@@ -14,14 +14,14 @@ function isMarked(markedCells: MarkedCell[], row: number, col: number) {
 
 function renderCell(cell: BoardCell) {
   if (cell.type === "free") {
-    return <span className="font-pixel text-sm font-black uppercase tracking-[0.12em] text-pixel-ink sm:text-lg lg:text-base xl:text-lg">FREE</span>;
+    return <span className="font-pixel text-sm font-black uppercase tracking-[0.12em] text-pixel-ink sm:text-lg lg:text-base xl:text-lg">TỰ DO</span>;
   }
 
   if (cell.type === "image") {
     return (
       <span className="flex h-full w-full items-center justify-center">
         <span className="block border-2 border-pixel-ink bg-white p-0.5 shadow-[2px_2px_0_#10101f]">
-          <img className="h-12 w-12 object-cover sm:h-16 sm:w-16 lg:h-14 lg:w-14 xl:h-16 xl:w-16" src={cell.value} alt={cell.label ?? "Bingo item"} />
+          <img className="h-12 w-12 object-cover sm:h-16 sm:w-16 lg:h-14 lg:w-14 xl:h-16 xl:w-16" src={cell.value} alt={cell.label ?? "Mục Bingo"} />
         </span>
       </span>
     );
