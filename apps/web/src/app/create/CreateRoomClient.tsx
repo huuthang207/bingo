@@ -5,11 +5,15 @@ import { AlertBox, PageShell, PixelButton, PixelPanel, StatCard, StatusBadge } f
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import type { CreateRoomResponse } from "@/lib/types";
 
-const starterItems = Array.from({ length: 40 }, (_, index) => String(index + 1)).join("\n");
+const starterItems = "";
+const maxImageFilesPerUpload = 10;
+const maxRoomItems = 250;
 
 type UploadResponse = {
-  url: string;
-  label: string | null;
+  items: Array<{
+    url: string;
+    label: string | null;
+  }>;
 };
 
 type WinnerEstimate = {
@@ -178,7 +182,7 @@ export function CreateRoomClient() {
   const [estimatedPlayers, setEstimatedPlayers] = useState(50);
   const [winnerEstimate, setWinnerEstimate] = useState<WinnerEstimate | null>(null);
   const [winnerEstimatePlayerCount, setWinnerEstimatePlayerCount] = useState(estimatedPlayers);
-  const [randomNumberCount, setRandomNumberCount] = useState(25);
+  const [randomNumberCount, setRandomNumberCount] = useState(99);
   const [randomNumberMin, setRandomNumberMin] = useState(1);
   const [randomNumberMax, setRandomNumberMax] = useState(99);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
@@ -196,6 +200,7 @@ export function CreateRoomClient() {
   }), [parsedItems]);
   const winRules = useMemo(() => ({ horizontal, vertical, diagonal }), [horizontal, vertical, diagonal]);
   const requiredItems = hasFreeCell ? boardSize * boardSize - 1 : boardSize * boardSize;
+  const remainingItemCapacity = Math.max(0, maxRoomItems - parsedItems.length);
   const canSubmit = title.trim().length > 0 && parsedItems.length >= requiredItems && (horizontal || vertical || diagonal);
 
   useEffect(() => {
@@ -241,40 +246,54 @@ export function CreateRoomClient() {
       return;
     }
 
+    if (imageFiles.length > maxImageFilesPerUpload) {
+      setItemActionError(`Chỉ được tải tối đa ${maxImageFilesPerUpload} ảnh mỗi lần.`);
+      return;
+    }
+
+    if (imageFiles.length > remainingItemCapacity) {
+      setItemActionError(
+        remainingItemCapacity > 0
+          ? `Tổng số mục tối đa là ${maxRoomItems}. Bạn đang có ${parsedItems.length} mục, chỉ có thể thêm ${remainingItemCapacity} ảnh nữa.`
+          : `Tổng số mục tối đa là ${maxRoomItems}. Hãy xóa bớt mục trước khi thêm ảnh mới.`,
+      );
+      return;
+    }
+
     setItemActionError(null);
-    setUploadProgress(null);
+    setUploadProgress(`Đang tải lên ${imageFiles.length} ảnh...`);
     setIsUploading(true);
 
     try {
-      const imageLines: string[] = [];
+      const formData = new FormData();
 
-      for (const [index, imageFile] of imageFiles.entries()) {
-        setUploadProgress(`Đang tải lên ${index + 1}/${imageFiles.length}`);
-        const formData = new FormData();
-        formData.append("file", imageFile);
-        formData.append("label", fileNameLabel(imageFile.name));
-
-        const response = await fetch(`${API_BASE_URL}/uploads`, {
-          method: "POST",
-          body: formData,
-        });
-
-        const payload = await response.json().catch(() => ({ message: "Không thể tải ảnh lên." }));
-
-        if (!response.ok) {
-          throw new Error(payload.message ?? "Không thể tải ảnh lên.");
-        }
-
-        const uploaded = payload as UploadResponse;
-        const label = (uploaded.label ?? fileNameLabel(imageFile.name)) || "Ảnh";
-        imageLines.push(`image|${toAbsoluteImageUrl(uploaded.url)}|${label}`);
+      for (const imageFile of imageFiles) {
+        formData.append("files", imageFile);
       }
+
+      const response = await fetch(`${API_BASE_URL}/uploads`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload = await response.json().catch(() => ({ message: "Không thể tải ảnh lên." }));
+
+      if (!response.ok) {
+        throw new Error(payload.message ?? "Không thể tải ảnh lên.");
+      }
+
+      const uploaded = payload as UploadResponse;
+      const imageLines = uploaded.items.map((item, index) => {
+        const label = (item.label ?? fileNameLabel(imageFiles[index]?.name ?? "")) || "Ảnh";
+        return `image|${toAbsoluteImageUrl(item.url)}|${label}`;
+      });
 
       setItems((currentItems) => appendItemLines(currentItems, imageLines));
       setImageFiles([]);
       setUploadProgress(`Đã tải lên ${imageLines.length} ảnh.`);
     } catch (caught) {
       setItemActionError(caught instanceof Error ? caught.message : "Không thể tải ảnh lên.");
+      setUploadProgress(null);
     } finally {
       setIsUploading(false);
     }
@@ -425,7 +444,7 @@ export function CreateRoomClient() {
                 <PixelButton className="mt-3 w-full text-sm" disabled={!imageFiles.length || isUploading} onClick={uploadImageItems} variant="success">
                   {isUploading ? uploadProgress ?? "Đang tải lên" : imageFiles.length ? `Thêm ${imageFiles.length} ảnh` : "Thêm ảnh"}
                 </PixelButton>
-                <p className="mt-2 text-xs font-bold text-pixel-ink/75" id="image-files-help">JPG, PNG, WEBP, tối đa 2MB mỗi ảnh.</p>
+                <p className="mt-2 text-xs font-bold text-pixel-ink/75" id="image-files-help">JPG, PNG, WEBP • tối đa 10MB/ảnh • tối đa 10 ảnh/lần • còn có thể thêm {remainingItemCapacity} mục.</p>
               </div>
             </div>
 
