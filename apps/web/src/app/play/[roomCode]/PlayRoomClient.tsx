@@ -9,7 +9,7 @@ import { AlertBox, PageShell, PixelButton, PixelPanel, StatusBadge } from "@/com
 import { apiFetch } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
 import { playSound } from "@/lib/sounds";
-import type { BingoVerifiedEvent, BoardRegeneratedEvent, CalledItem, ItemCalledEvent, JoinRoomResponse, OnlinePlayerCountEvent, PlayerState, RoomStateEvent } from "@/lib/types";
+import type { BingoVerifiedEvent, BoardRegeneratedEvent, CalledItem, GameRestartedEvent, ItemCalledEvent, JoinRoomResponse, OnlinePlayerCountEvent, PlayerState, RoomStateEvent } from "@/lib/types";
 
 type PlayRoomClientProps = {
   roomCode: string;
@@ -82,13 +82,25 @@ export function PlayRoomClient({ roomCode }: PlayRoomClientProps) {
     nextSocket.on("online_player_count_updated", (event: OnlinePlayerCountEvent) => setOnlinePlayerCount(event.onlinePlayerCount));
     nextSocket.on("game_started", () => setState((current) => (current ? { ...current, roomStatus: "playing" } : current)));
     nextSocket.on("game_ended", () => setState((current) => (current ? { ...current, roomStatus: "ended" } : current)));
-    nextSocket.on("game_restarted", () => {
+    nextSocket.on("game_restarted", (event: GameRestartedEvent) => {
       setError(null);
       setSuccessMessage(null);
       setWinnerName(null);
       setAnimatedCalledOrder(null);
-      setMarkedCells([]);
-      setState((current) => (current ? { ...current, roomStatus: "waiting", calledItems: [], markedCells: [] } : current));
+      setMarkedCells(event.markedCells);
+      setState((current) => current ? {
+        ...current,
+        roomStatus: event.status,
+        calledItems: event.calledItems,
+        markedCells: event.markedCells,
+        boardRegenerationCount: event.boardRegenerationCount,
+        boardRegenerationsRemaining: event.boardRegenerationsRemaining,
+      } : current);
+      setLocalBoard((current) => current ? {
+        ...current,
+        boardRegenerationCount: event.boardRegenerationCount,
+        boardRegenerationsRemaining: event.boardRegenerationsRemaining,
+      } : current);
     });
     nextSocket.on("item_called", (event: ItemCalledEvent) => {
       const calledItem: CalledItem = {

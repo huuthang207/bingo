@@ -109,3 +109,13 @@ export type BoardRegeneratedEvent = {
   boardRegenerationCount: number;
   boardRegenerationsRemaining: number;
 };
+
+export type GameRestartedEvent = {
+  roomCode: string;
+  status: "waiting";
+  restartedAt: string;
+  calledItems: [];
+  markedCells: MarkedCell[];
+  boardRegenerationCount: number;
+  boardRegenerationsRemaining: number;
+};

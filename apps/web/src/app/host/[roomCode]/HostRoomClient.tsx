@@ -8,7 +8,7 @@ import { CalledItemCard } from "@/components/CalledItemCard";
 import { AlertBox, PageShell, PixelButton, PixelPanel, StatCard, StatusBadge } from "@/components/PixelUi";
 import { apiFetch } from "@/lib/api";
 import { createSocket } from "@/lib/socket";
-import type { BingoClaimedEvent, CalledItem, HostState, ItemCalledEvent } from "@/lib/types";
+import type { BingoClaimedEvent, CalledItem, GameRestartedEvent, HostState, ItemCalledEvent } from "@/lib/types";
 
 type HostRoomClientProps = {
   roomCode: string;
@@ -75,13 +75,14 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     nextSocket.on("disconnect", () => setIsConnected(false));
     nextSocket.on("game_started", () => setHostState((current) => (current ? { ...current, status: "playing" } : current)));
     nextSocket.on("game_ended", () => setHostState((current) => (current ? { ...current, status: "ended" } : current)));
-    nextSocket.on("game_restarted", () => {
+    nextSocket.on("game_restarted", (event: GameRestartedEvent) => {
       setError(null);
       setAnimatedCalledOrder(null);
       setHostState((current) => current ? {
         ...current,
-        status: "waiting",
-        calledItems: [],
+        status: event.status,
+        calledItems: event.calledItems,
+        claims: [],
         players: current.players.map((player) => ({ ...player, isWinner: false })),
       } : current);
     });
@@ -172,7 +173,7 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
     }
   }
 
-  function emitHostEvent(eventName: "start_game" | "call_next_item" | "end_game") {
+  function emitHostEvent(eventName: "start_game" | "call_next_item" | "end_game" | "restart_game") {
     setError(null);
     socket?.emit(eventName, { roomCode, hostToken });
   }
@@ -221,8 +222,11 @@ export function HostRoomClient({ roomCode, hostToken }: HostRoomClientProps) {
                 <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status === "ended"} onClick={() => emitHostEvent("end_game")} variant="danger">
                   Kết thúc
                 </PixelButton>
-                <Link className="pixel-button pixel-button-secondary min-h-10 w-full px-2 py-2 text-xs sm:text-sm" href="/create">
-                  Ván mới
+                <PixelButton className="min-h-10 w-full px-2 py-2 text-xs sm:text-sm" disabled={hostState?.status !== "ended"} onClick={() => emitHostEvent("restart_game")} variant="secondary">
+                  Chơi lại phòng này
+                </PixelButton>
+                <Link className="pixel-button pixel-button-ghost col-span-2 min-h-10 w-full px-2 py-2 text-xs sm:text-sm" href="/create">
+                  Tạo phòng mới
                 </Link>
               </div>
             </PixelPanel>

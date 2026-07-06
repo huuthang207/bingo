@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageShell, PixelPanel, StatusBadge } from "@/components/PixelUi";
+import { JoinRoomByCodeForm } from "./JoinRoomByCodeForm";
 
 export default function HomePage() {
   return (
@@ -16,16 +17,21 @@ export default function HomePage() {
               Tạo ván mới
             </Link>
             <a className="pixel-button pixel-button-secondary w-full" href="#join">
-              Cách tham gia
+              Tham gia phòng
             </a>
           </div>
         </section>
 
         <PixelPanel className="p-5 sm:p-6" id="join">
-          <p className="pixel-label text-pixel-pink">Cách chơi</p>
-          <div className="mt-5 grid gap-4">
+          <p className="pixel-label text-pixel-pink">Tham gia phòng</p>
+          <h2 className="mt-3 font-pixel text-2xl font-black uppercase text-pixel-ink">Nhập mã từ người dẫn</h2>
+          <p className="mt-3 font-bold leading-7 text-slate-700">
+            Người chơi có thể quét QR, mở link phòng, hoặc nhập mã phòng để vào cùng một phòng Bingo.
+          </p>
+          <JoinRoomByCodeForm />
+          <div className="mt-6 grid gap-4">
             {[
-              ["01", "Người dẫn tạo phòng rồi chia sẻ mã QR hoặc đường link."],
+              ["01", "Người dẫn tạo phòng rồi chia sẻ mã QR, đường link hoặc mã phòng."],
               ["02", "Người chơi nhập tên để nhận bảng Bingo riêng."],
               ["03", "Khi thấy bảng đã hoàn chỉnh, bấm BINGO để máy chủ kiểm tra."],
             ].map(([step, text]) => (
@@ -35,9 +41,6 @@ export default function HomePage() {
               </div>
             ))}
           </div>
-          <p className="mt-5 border-4 border-pixel-ink bg-pixel-cyan p-4 font-black text-pixel-ink shadow-[4px_4px_0_#10101f]">
-            Đã có link phòng? Mở link người chơi từ người dẫn để vào thẳng bảng Bingo của bạn.
-          </p>
         </PixelPanel>
       </div>
     </PageShell>

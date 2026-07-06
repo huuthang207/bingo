@@ -6,6 +6,7 @@ import { prisma } from "./db.js";
 import { addMarkedCell, canMarkCell, getCalledItemIds } from "./services/game.js";
 import { logger } from "./services/logger.js";
 import { addOnlinePlayer, countOnlinePlayers, removeOnlinePlayer } from "./services/onlinePlayers.js";
+import { createGameRestartedEvent, getRestartGameError, resetRoomForNewRound } from "./services/restartGame.js";
 import { getCalledItems, getPlayerForToken, getRoomForHost, getWinRules, parseBoard, parseMarkedCells, toBingoItem } from "./services/state.js";
 
 function emitError(socket: Parameters<Server["on"]>[1] extends (socket: infer S) => void ? S : never, code: string, message: string) {
@@ -305,19 +306,17 @@ export function registerSocketHandlers(io: Server) {
         return;
       }
 
-      if (room.status !== "ended") {
-        emitError(socket, "INVALID_ROOM_STATUS", "Only ended games can be restarted.");
+      const restartError = getRestartGameError(room);
+
+      if (restartError) {
+        emitError(socket, restartError.code, restartError.message);
         return;
       }
 
-      await prisma.$transaction([
-        prisma.calledItem.deleteMany({ where: { roomId: room.id } }),
-        prisma.player.updateMany({ where: { roomId: room.id }, data: { markedCells: [], isWinner: false } }),
-        prisma.room.update({ where: { id: room.id }, data: { status: "waiting", endedAt: null } }),
-      ]);
+      await resetRoomForNewRound(room.id);
 
       logger.info("socket_restart_game", { socketId: socket.id, roomCode });
-      io.to(`room:${roomCode}`).emit("game_restarted", { roomCode, restartedAt: new Date().toISOString() });
+      io.to(`room:${roomCode}`).emit("game_restarted", createGameRestartedEvent(roomCode));
     });
 
     socket.on("regenerate_board", async ({ roomCode, playerToken }: { roomCode: string; playerToken?: string }) => {
